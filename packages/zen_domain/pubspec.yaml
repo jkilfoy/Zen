@@ -1,0 +1,29 @@
+name: zen_domain
+description: >-
+  Pure Dart domain layer for Zen: entities, value objects, the business rules of
+  ZEN_SPEC.md §4, the End-of-Day calculator of §4.5 and the merge of §9.
+
+  §11.1: this package MUST NOT depend on flutter, drift, sqlite3, shelf, or
+  anything that touches IO. The constraint is load-bearing — it is what makes
+  the compiler enforce the architecture boundary NFR-4 and STORE-2 ask for.
+  `test/architecture_test.dart` fails the build if it is ever relaxed.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  # Grapheme-cluster-aware string handling. NAME-2 defines "characters" as
+  # Unicode extended grapheme clusters, which dart:core cannot count.
+  characters: ^1.4.1
+  collection: ^1.19.0
+  meta: ^1.16.0
+  # UUIDv7 for entity ids (§3). RFC 9562 v7 support verified on pub.dev.
+  uuid: ^4.6.0
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: ^1.32.0
+  # Reads this package's own pubspec in architecture_test.dart.
+  yaml: ^3.1.3

@@ -1,0 +1,31 @@
+name: zen_app
+description: >-
+  Zen: a personal Zen To Done companion. Flutter UI, Riverpod providers,
+  routing, theming and platform glue (ZEN_SPEC.md §11.7).
+
+  The android/ and windows/ platform folders are generated with
+  `flutter create --platforms=windows,android .` in M4; see DECISIONS.md.
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  zen_data:
+    path: ../zen_data
+  zen_domain:
+    path: ../zen_domain
+  zen_sync:
+    path: ../zen_sync
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

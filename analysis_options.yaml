@@ -1,0 +1,39 @@
+# Shared analyzer configuration for every package in the repository.
+#
+# Each package includes its own lint-set package (`lints` for pure Dart,
+# `flutter_lints` for Flutter) and then this file, so the extra rules
+# required by §11.11 are declared in exactly one place.
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - "build/**"
+  errors:
+    # Generated Drift code is excluded above; anything else that the analyzer
+    # reports is a CI failure via `--fatal-infos --fatal-warnings` (§11.10).
+    todo: ignore
+
+linter:
+  rules:
+    # §11.11, named explicitly by the specification.
+    - prefer_final_locals
+    - avoid_dynamic_calls
+    - require_trailing_commas
+    - unawaited_futures
+
+    # NFR-4: "Doc comments on public types."
+    - public_member_api_docs
+
+    # NFR-4: conventional layout, no clever metaprogramming.
+    - always_declare_return_types
+    - avoid_print
+    - prefer_const_constructors
+    - prefer_const_declarations
+    - prefer_final_in_for_each
+    - sort_constructors_first
+    - use_super_parameters

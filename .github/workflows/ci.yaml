@@ -1,0 +1,78 @@
+# §11.10. Runs on every push and pull request.
+#
+# The tagged-release job that builds the Windows installer and the signed APK
+# is added in M8; it needs a Windows runner, Inno Setup and a keystore secret,
+# none of which exist yet (§11.13.1).
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+env:
+  # Pinned to match .fvmrc so the machines and the build agree (§11.2).
+  FLUTTER_VERSION: "3.47.5"
+
+jobs:
+  verify:
+    name: analyze, format and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Report toolchain versions
+        run: |
+          flutter --version
+          dart --version
+
+      - name: Resolve dependencies
+        run: |
+          for package in zen_domain zen_data zen_sync zen_app; do
+            echo "::group::pub get $package"
+            (cd "packages/$package" && flutter pub get)
+            echo "::endgroup::"
+          done
+
+      # §11.10 step 1: analyze across all four packages, warnings as errors.
+      - name: Analyze
+        run: |
+          for package in zen_domain zen_data zen_sync zen_app; do
+            echo "::group::analyze $package"
+            (cd "packages/$package" && dart analyze --fatal-infos --fatal-warnings)
+            echo "::endgroup::"
+          done
+
+      # §11.10 step 4.
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      # §11.11: the DateTime.now() ban outside zen_app.
+      - name: Check for DateTime.now() outside zen_app
+        run: bash tools/check_no_datetime_now.sh
+
+      # §11.10 step 2: pure Dart packages.
+      - name: Test zen_domain
+        run: dart test
+        working-directory: packages/zen_domain
+
+      - name: Test zen_sync
+        run: dart test
+        working-directory: packages/zen_sync
+
+      # §11.10 step 3: Flutter packages.
+      - name: Test zen_data
+        run: flutter test
+        working-directory: packages/zen_data
+
+      - name: Test zen_app
+        run: flutter test
+        working-directory: packages/zen_app

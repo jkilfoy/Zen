@@ -1,0 +1,18 @@
+name: zen_sync
+description: >-
+  Snapshot format, sync transports and the sync orchestrator for Zen
+  (ZEN_SPEC.md §11.6). Pure Dart: `dart test` runs it without Flutter.
+  Third-party dependencies are added in M6/M7 and recorded in DECISIONS.md.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  zen_domain:
+    path: ../zen_domain
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: ^1.32.0

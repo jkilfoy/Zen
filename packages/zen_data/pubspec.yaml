@@ -1,0 +1,22 @@
+name: zen_data
+description: >-
+  Drift schema, migrations and repository implementations for Zen
+  (ZEN_SPEC.md §11.5). Drift's dependencies are added in M3 and the resolved
+  versions recorded in DECISIONS.md.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  zen_domain:
+    path: ../zen_domain
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

@@ -1,0 +1,29 @@
+# Dart / Flutter
+.dart_tool/
+.packages
+build/
+pubspec.lock.bak
+*.iml
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# FVM
+.fvm/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Generated Drift output is committed (§11.5.3 migration tests depend on it),
+# so *.g.dart is deliberately NOT ignored.
+
+# Secrets: the Android signing keystore and its passwords (§11.9) must never
+# reach the repository. Back them up off-device instead.
+*.keystore
+*.jks
+key.properties
