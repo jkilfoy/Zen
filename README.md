@@ -80,6 +80,12 @@ Not yet. The Flutter UI arrives in M4; `packages/zen_app` currently holds only
 its pubspec and a placeholder library, and its `android/` and `windows/`
 folders are generated at that point (see `DECISIONS.md`, D-M0-6).
 
+What does exist is the whole rules engine, and it runs in about a second:
+
+```bash
+cd packages/zen_domain && dart test
+```
+
 ## Conventions
 
 - Requirement IDs from the spec are named in doc comments where a rule is
@@ -100,7 +106,7 @@ still waiting on real hardware (§11.13.1).
 | Milestone | State |
 |---|---|
 | M0 — repository skeleton | **done** — every §11.10 step green locally; `ci.yaml` itself unproven until first push |
-| M1 — `zen_domain` model and rules | in progress |
+| M1 — `zen_domain` model and rules | **done** — 212 tests green |
 | M2 — merge | not started |
 | M3 — `zen_data` | not started |
 | M4 — capture path | not started |

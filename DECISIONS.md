@@ -138,6 +138,83 @@ instead.
 
 ---
 
+---
+
+## M1 — `zen_domain` model and rules
+
+**D-M1-1 — "Unicode case folding" (§2) is approximated by `String.toLowerCase`, and no Unicode normal form is applied.**
+§2 asks for case folding, which is strictly more than lowercasing: full folding maps `ß` to `ss`, and Dart carries no such table. `toLowerCase` is the simplest behaviour consistent with the document. Two consequences, both accepted: names differing only by a fold-but-not-lowercase pair compare as different, and a composed `é` and a decomposed `é` are different names, which can matter between a Windows and an Android keyboard. `normalizeName` is the single definition of the rule, so the domain, the merge (§9.2) and the `name_normalized` index (§11.5.2) cannot drift apart whatever is decided later.
+
+**D-M1-2 — DST is resolved through a `TimeZoneRules` port, not `package:timezone`.**
+§11.4.4 gives `archiveBoundaryAfter` a `String zoneId`, but `dart:core` cannot resolve an IANA zone. `package:timezone` 0.11.1 declares `package:http` as a runtime dependency, which reaches `dart:io`, so depending on it would breach §11.1 — the constraint the specification calls load-bearing. `zen_domain` therefore declares a one-method port, `Duration offsetAt(DateTime utc, String zoneId)`, and keeps the hard part — gap and ambiguity handling — in `end_of_day.dart`, tested against a fixture with real Toronto transition rules. `zen_data` supplies the adapter over `package:timezone` in M3. **§11.2's package table names no timezone package at all; this is the gap it leaves.**
+
+**D-M1-3 — Copy for the violations the specification does not give copy for.**
+§11.4.1 requires every `RuleViolation` to carry a message, but §3–§5 supply copy for only some of them. The owner supplied the rest on 2026-09-22. They fall in three groups.
+
+*Silent — the specification says these produce no message, so `message` is empty and `hasMessage` is false:*
+
+| Violation | Rule |
+|---|---|
+| `TaskBlocked` | §4.2 row 4, AC-7: "No change", at most a nudge animation |
+| `SubtaskBlocked` | SUB-4: "A `Blocked` subtask does not toggle" |
+| `TagEmpty` | see D-M1-4 |
+
+*Unreachable through the MVP UI — the copy exists so that no code path can persist a violation:*
+
+| Violation | Copy | Rule |
+|---|---|---|
+| `ArchivedTaskImmutable` | "Unarchive this task before changing its status." | STATUS-4 |
+| `DeletedTaskImmutable` | "Restore this task before changing its status." | DEL-1, SEARCH-3 |
+| `SubtaskAddForbiddenWhileDone` | "Set the task back to Todo to add a subtask." | SUB-8 |
+
+*Reachable by the user:*
+
+| Violation | Copy | Rule |
+|---|---|---|
+| `TagContainsWhitespace` | "Tags cannot contain spaces." | TAG-2 |
+| `TagTooLong` | "Tags must be 32 characters or fewer." | TAG-3 |
+| `ContextTooLong` | "Context must be 10,000 characters or fewer." | §3.2 |
+| `DescriptionTooLong` | "Description must be 10,000 characters or fewer." | §3.3 |
+| `SubtaskNameEmpty` | "Subtask name cannot be empty." | §3.4 |
+| `SubtaskNameTooLong` | "Subtask name must be 1000 characters or fewer." | §3.4 |
+| `NameContainsLineBreak` | "Name cannot contain line breaks." | NAME-4 |
+| `SubtaskNameContainsLineBreak` | "Subtask name cannot contain line breaks." | §3.4 |
+
+The last two were not in the batch first put to the owner and **need review**. NAME-4 says a name "MUST NOT contain line breaks" and gives no message, because the Add and Edit screens make Enter submit the form — the state is reachable only by pasting. Rejecting rather than silently stripping follows principle 1.2.5 and matches how every other §3.1 validation behaves. Both strings are in the same voice as the approved batch.
+
+**D-M1-4 — An empty tag is refused silently.**
+TAG-3 sets a minimum of 1 character but gives no copy, and the gesture that produces it — committing an empty chip — is not an error the user needs told about. `TagEmpty` carries no message and the chip input simply adds nothing.
+
+**D-M1-5 — An ambiguous End-of-Day boundary resolves to the earlier occurrence.**
+EOD-5 handles the spring-forward gap ("use the first valid instant after it") but says nothing about the fall-back hour, when the configured wall-clock time occurs twice. The earlier is the simplest reading of EOD-2, which asks for the *first* boundary strictly after a completion. Both cases are tested at exact instants in `test/time/end_of_day_test.dart`.
+
+**D-M1-6 — Two §11.4.1 signatures gained a parameter.**
+`addSubtask(Task, String name, DateTime now)` has no way to mint the UUIDv7 that §3.4 requires, so it takes an `IdGenerator` — the same treatment §11.11 already gives the clock — and a validated `SubtaskName` rather than a raw `String` (§11.4.2). `reopenTask(Task)` takes a `DateTime now`, because §3.3 requires `updatedAt` to move on every user edit and INV-5 would otherwise be unenforceable.
+
+**D-M1-7 — Reordering subtasks moves the parent's `updatedAt` only.**
+§3.3 requires the Task's `updatedAt` to move on any subtask change. Nothing about an individual subtask changes when the list is reordered, so their own timestamps are left alone. Renaming moves both.
+
+**D-M1-8 — Test doubles ship in `lib/testing.dart`, not `test/`.**
+`FakeClock`, `SequentialIdGenerator`, `FixedOffsetTimeZoneRules` and `TorontoTimeZoneRules` are needed by `zen_data`, `zen_sync` and `zen_app` tests, and a package's `test/` directory is not importable from a sibling package. They are pure Dart, so §11.1 still holds, and they sit behind a separate barrel so nothing in `zen_domain.dart` exposes them.
+
+**D-M1-9 — A rule asked to do what has already been done returns `Ok` unchanged.**
+`completeTask` on a `Done` Task, `reopenTask` on a `Todo` one, `setTaskStatus` to the current status, `softDeleteTask` on a deleted Task, `restoreTask` on a live one, `unarchiveTask` on an unarchived one, and `reorderSubtasks` from an index to itself are all no-ops rather than refusals. The simplest behaviour, and it keeps callers free of pre-checks.
+
+**D-M1-10 — Archived and soft-deleted Tasks refuse every edit, and NAME-9 is checked only when the result would actually be active.**
+STATUS-4 blocks status changes on an archived Task; SEARCH-3 opens a deleted one read-only with only a `"Restore"` action, so the same treatment is the simplest consistent choice, and it is applied to subtask edits too. Conversely a Task that is both archived and deleted reserves no name (§2, NAME-7), so restoring or unarchiving one of those passes the NAME-9 check — it lands back in the archive, not the To Do list.
+
+**D-M1-11 — Three name-collision classes rather than one.**
+§11.4.1 sketches a single `NameCollision` covering "NAME-8 / NAME-9 messages". Split into `IdeaNameCollision`, `TaskNameCollision` and `ActiveTaskHoldsName`, because the three carry different copy and a test that asserts on a type is clearer than one that asserts on a string.
+
+**D-M1-12 — The nullable lifecycle timestamps are not settable through `copyWith`.**
+INV-1 makes `completedAt` a function of `status`, and INV-4 makes `archivedAt` and `deletedAt` functions of their flags. Rather than a sentinel to distinguish "not supplied" from "set to null", `Task` exposes `withStatus`, `archived`, `unarchived`, `softDeleted` and `restored`, each of which maintains its pairing by construction. `copyWith` covers the remaining fields. This is why no caller can break INV-1 or INV-4 by accident.
+
+**D-M1-13 — `archiveTask` asserts rather than returning a `Result`.**
+INV-3 allows only a `Done` Task to archive, and the sweeper selects on exactly that (EOD-2, §11.5.4), so anything else is programmer error — which §11.4.1 reserves exceptions for. The same applies to an unknown subtask id and an out-of-range reorder index.
+
+**D-M1-14 — `Settings` and the repository interfaces were written in M1.**
+§11.13's M1 row lists entities, value objects, `Clock`, the §4 rules and the EoD calculator, but §11.1 places the repository interfaces in `zen_domain`, and `SettingsRepository` cannot be declared without the §3.6 settings record. Both are declarations with no behaviour to test; M3 implements them. §11.8's sync settings are deliberately not added yet — they arrive in M6, with the transports that read them.
+
 ## Verification status (§11.13.1)
 
 §11.13.1 requires that no milestone be reported done on the strength of code
@@ -145,6 +222,7 @@ that has never run.
 
 | Milestone | Verified | How |
 |---|---|---|
+| M1 | **Yes** | 212 tests green under `dart test`, covering every rule in §4, every invariant in §3.7, the validation in §3.1 and §3.5, the EoD calculator at exact boundary instants including both DST transitions, and AC-1, AC-2, AC-3 and AC-7 as pure domain tests. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean, and `zen_domain` still declares no dependency that touches IO (`test/architecture_test.dart`). |
 | M0 | **Yes** | Flutter 3.47.5 / Dart 3.13.4 installed to `C:\src\flutter` on 2026-09-22 (archive SHA-256 checked against the release manifest). Every step of §11.10 run locally and green: `pub get` in all four packages, `dart analyze --fatal-infos --fatal-warnings` × 4 with no issues, `dart format --set-exit-if-changed`, `tools/check_no_datetime_now.sh`, `dart test` × 2, `flutter test` × 2. **Not yet observed on the GitHub Actions runner** — the workflow has never executed, since the repository has no remote. See the open item below. |
 
 Nothing in this table may be treated as complete until its column reads "Yes".

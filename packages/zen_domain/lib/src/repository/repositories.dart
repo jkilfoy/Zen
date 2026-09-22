@@ -1,0 +1,157 @@
+/// §8, §11.4.6. The repository interfaces.
+///
+/// STORE-2: all reads and writes go through these, and UI code must not touch
+/// the database directly. Declared here and implemented in `zen_data` (M3), so
+/// that a later version can add a remote-backed implementation without changing
+/// UI or domain code.
+library;
+
+import '../model/enums.dart';
+import '../model/idea.dart';
+import '../model/item_event.dart';
+import '../model/settings.dart';
+import '../model/task.dart';
+import '../model/tombstone.dart';
+import '../result.dart';
+
+/// §11.4.6. Storage for Ideas.
+abstract interface class IdeaRepository {
+  /// IDEAS-4. Every Idea, oldest first, as a live stream.
+  ///
+  /// §11.7: the lists watch this, so an edit updates the screen without a
+  /// manual refresh.
+  Stream<List<Idea>> watchAll();
+
+  /// Returns the Idea with [id], or `null`.
+  Future<Idea?> findById(String id);
+
+  /// NAME-6, NAME-8. Returns the active Idea whose normalized name is
+  /// [normalized], or `null`. Used to render the `"Open it"` link.
+  Future<Idea?> findActiveByNormalizedName(String normalized);
+
+  /// CREATE-1, CREATE-4. Persists a new Idea durably before returning.
+  ///
+  /// Returns [IdeaNameCollision] if the name is taken, whether the application
+  /// check or the unique index catches it (§11.5.2).
+  Future<Result<Idea, RuleViolation>> create(Idea idea);
+
+  /// Persists an edit to an existing Idea.
+  Future<Result<Idea, RuleViolation>> update(Idea idea);
+
+  /// DEL-3. Removes the Idea and writes its tombstone, in one transaction.
+  Future<void> delete(String id, DateTime now);
+}
+
+/// §11.4.6. Storage for Tasks.
+abstract interface class TaskRepository {
+  /// TODO-1, TODO-2. The To Do list: not deleted, not archived, oldest first.
+  Stream<List<Task>> watchActive();
+
+  /// ARCH-1. Archived, not deleted, newest first.
+  Stream<List<Task>> watchArchived();
+
+  /// Returns the Task with [id], or `null`.
+  Future<Task?> findById(String id);
+
+  /// NAME-6, NAME-8, NAME-9. Returns the active Task whose normalized name is
+  /// [normalized], or `null`.
+  Future<Task?> findActiveByNormalizedName(String normalized);
+
+  /// §2, NAME-7. The normalized names of every active Task, which is what the
+  /// rules in `rules/task_rules.dart` take.
+  Future<Set<String>> activeNormalizedNames();
+
+  /// CREATE-2, CREATE-4. Persists a new Task durably before returning.
+  Future<Result<Task, RuleViolation>> create(Task task);
+
+  /// Persists an edit, replacing the subtask list wholesale (§11.5.1).
+  Future<Result<Task, RuleViolation>> update(Task task);
+
+  /// DEL-1. Soft-deletes the Task. Never a hard delete (principle 1.2.4).
+  Future<Result<Task, RuleViolation>> softDelete(String id, DateTime now);
+
+  /// DEL-2, NAME-9. Restores a soft-deleted Task, refusing on a name collision.
+  Future<Result<Task, RuleViolation>> restore(String id, DateTime now);
+
+  /// ARCH-3, ARCH-4, NAME-9. Unarchives a Task, refusing on a name collision.
+  Future<Result<Task, RuleViolation>> unarchive(String id, DateTime now);
+
+  /// EOD-2, EOD-3, STORE-3. Archives every Task whose boundary has passed, in
+  /// one transaction, and returns them.
+  ///
+  /// Idempotent, so running it at start, on foreground and at each boundary
+  /// costs nothing extra (§11.5.4).
+  Future<List<Task>> runArchiveSweep(DateTime nowUtc);
+}
+
+/// §11.4.6. Storage for the per-replica settings of §3.6 and §11.8.
+///
+/// MERGE-3: settings are never merged and never travel in a snapshot.
+abstract interface class SettingsRepository {
+  /// The current settings, as a live stream so the theme and decor react
+  /// immediately (SET-2).
+  Stream<Settings> watch();
+
+  /// Reads the current settings once.
+  Future<Settings> read();
+
+  /// SET-2. Persists [settings] immediately.
+  Future<void> write(Settings settings);
+}
+
+/// HIST-2. The append-only event log.
+///
+/// Local-only: it never travels in a snapshot, and §11.5.1 caps it.
+abstract interface class EventLog {
+  /// Appends [event].
+  Future<void> append(ItemEvent event);
+
+  /// Every recorded event for [itemId], oldest first.
+  ///
+  /// The MVP does not show the log in the UI; this exists for audit and for
+  /// future merge strategies (§9.1).
+  Future<List<ItemEvent>> forItem(String itemId);
+}
+
+/// §11.4.6, §9.3 step 1. Storage for Idea tombstones.
+abstract interface class TombstoneStore {
+  /// Every tombstone this replica holds, for inclusion in a snapshot.
+  Future<List<IdeaTombstone>> all();
+
+  /// INV-7. The ids of every tombstoned Idea.
+  Future<Set<String>> tombstonedIdeaIds();
+
+  /// Records [tombstone], ignoring one that is already present.
+  Future<void> add(IdeaTombstone tombstone);
+}
+
+/// §11.4.6, CONVERT-4. Converting an Idea into a Task, atomically.
+///
+/// "Declared as a single method so that atomicity cannot be lost by a caller":
+/// creating the Task, removing the Idea and writing the tombstone are one
+/// transaction (STORE-3, AC-11).
+abstract interface class ConversionService {
+  /// CONVERT-3, CONVERT-4. Commits [draft] and consumes [idea].
+  ///
+  /// [draft] comes from `draftTaskFromIdea` with the user's edits applied
+  /// (CONVERT-2). Returns [TaskNameCollision] without touching [idea] if the
+  /// name is taken (CONVERT-3).
+  Future<Result<Task, RuleViolation>> convert(
+    Idea idea,
+    Task draft,
+    DateTime now,
+  );
+}
+
+/// §11.5.1. The one-row table identifying this installation.
+abstract interface class ReplicaRepository {
+  /// This device's `replicaId`, a UUIDv7 generated on first launch.
+  Future<String> replicaId();
+
+  /// This device's name, used in pairing (§11.6.4) and snapshots (§11.6.1).
+  Future<String> deviceName();
+}
+
+/// §2. Which kind of Item a repository call is about, where one signature
+/// serves both.
+typedef ItemRef = ({String id, ItemKind kind});
