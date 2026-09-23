@@ -2,7 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.4 |
+| Document version | 1.5 |
+| Changes in 1.5 | Eleven findings from the M3 agent's pre-implementation review, all accepted. **§3: millisecond precision is exact, not a floor** — Drift's default stores whole seconds, which would have manufactured `updatedAt` ties and reverted renames through §9.3 step 4, and mixed-width ISO text sorts non-chronologically. **§3.7 gains INV-8** (the `sourceIdea` pair) **and INV-9** (timestamp precision). **§11.5.1 replaces the shared `tags` / polymorphic `item_tags` pair with per-kind `idea_tags` and `task_tags`**, which can express TAG-4 and can carry a real cascading foreign key. **§11.5.2** adds `CHECK`s for INV-5, INV-8 and INV-9, gives INV-2 and INV-7 triggers instead of a repository-only check, pins ISO-8601 text storage, and specifies attempt-and-translate over pre-checking. **EOD-2A**: archiving no longer moves `updatedAt`. **§11.5.4**: the sweep takes its time inputs explicitly. **§11.4.6**: `EventLog` gains `prune`. **§11.6.5**: a merge is applied by wholesale replacement, never row by row. |
 | Changes in 1.4 | Ten findings from the M2 agent's pre-implementation review of §9.3, all accepted. **§9.1 gains MERGE-3A**, distinguishing the set-valued collections (`ideas`, `tasks`, `tombstones`, emitted sorted by `id`) from the genuinely ordered ones (`subtasks`, `tags`). **§9.3 is rewritten**: record order is defined instead of the unusable "sorted by `id`"; tombstones are deduplicated per Idea; **subtask matching is by `id` first and by name-position only as a fall-back**, which fixes a silent data-loss bug where a renamed subtask collapsed two distinct subtasks into one; `archivedAt` and `deletedAt` are conditional on their flags (INV-4); the `sourceIdea` fields resolve as a pair; subtask `completedAt` and list order are specified; and step 6's termination argument is corrected. §9.4 now records that `Done`, `isDeleted` and `isArchived` are all sticky, not just `Done`. |
 | Changes in 1.3 | Pre-M2 review of §9.3, which was ambiguous in two places that decide real behaviour. **Step 4 now defines the primary record**: a component normally holds several records sharing the chosen `id`, and the choice between them decides whether a rename survives a merge or is silently reverted. **Step 5(d)** applies the same rule to subtasks. **Step 6** now groups all colliding Items by name and resolves each group in one pass, because the pairwise wording was order-dependent once three Items collide, breaking MERGE-2. |
 | Changes in 1.2 | Post-M1 review. **§9.1: `ReplicaSnapshot` and `MergeResult` are `zen_domain` types** — §11.3 previously placed the snapshot in `zen_sync`, which would have inverted the dependency direction and blocked M2. **§2: name normalization now includes a Unicode NFC pass**, and §11.5.2 notes why the rule must be settled before the schema exists. §11.2 gained the `unorm_dart`, `characters` and `timezone` rows, the last with the constraint that it belongs to `zen_data` only. §11.5.2 notes that `assert` is stripped in release builds, so the database constraints are the only enforcement that ships. |
@@ -100,7 +101,14 @@ Permanently out of scope, per principle 1.2.3: MITs, Big Rocks, Single Goal trac
 
 ## 3. Data model
 
-All timestamps are stored as **UTC instants** (ISO-8601 with `Z`, millisecond precision). They are displayed in the device's local time zone.
+All timestamps are **UTC instants** (ISO-8601 with `Z`), displayed in the device's local time zone.
+
+**Millisecond precision is exact, not a floor.** Every instant MUST be truncated to whole milliseconds, and the truncation happens where instants enter the system — in `Clock`, so nothing downstream has to remember, and again at the storage and snapshot-parsing boundaries, so an instant arriving from a peer or an older database cannot smuggle in finer precision. Every stored timestamp is therefore exactly `YYYY-MM-DDTHH:MM:SS.mmmZ`, 24 characters.
+
+Two reasons this is a rule rather than a detail:
+
+1. **Ordering.** Timestamps are stored as text, and text compares lexicographically. That is chronological *only* at uniform width: `"…00.100Z"` sorts **after** `"…00.100500Z"`, because `Z` (0x5A) outranks any digit — so the earlier instant would compare as the later one. Mixed precision silently corrupts every `ORDER BY`, every range predicate, and the `INV-5` check.
+2. **The merge.** §9.3 step 4 picks the primary record by latest `updatedAt` and falls back to *content-based* tie-breaks. Coarser storage manufactures ties between edits that were genuinely ordered, and a tie can revert a rename — the precise failure that step 4's "Why this matters" paragraph exists to prevent.
 
 All IDs are **UUIDv7** strings, assigned by the system at creation and never changed by the user. UUIDv7 is time-ordered and collision-safe across replicas without coordination. IDs are visible only in the Advanced details panel (§5.3, §5.4).
 
@@ -209,6 +217,8 @@ The persistence layer MUST enforce these, and tests MUST cover them.
 - **INV-5.** `createdAt ≤ updatedAt`.
 - **INV-6.** Names satisfy §3.1 including uniqueness (NAME-6). Tags satisfy §3.5.
 - **INV-7.** Every tombstoned Idea id is absent from the Ideas table.
+- **INV-8.** `sourceIdeaId` and `sourceIdeaCreatedAt` are either both null or both non-null. They are one fact about one Idea (§3.3), and §9.3 step 4 resolves them as a pair; this makes that a property of the data rather than of one merge step.
+- **INV-9.** Every timestamp has exactly millisecond precision (§3).
 
 ---
 
@@ -272,6 +282,7 @@ SUB-1 and SUB-8 together mean INV-2 can never be broken by a subtask edit: statu
 - **EOD-1.** `settings.endOfDay` (local time, default 02:00) defines the boundary between logical days.
 - **EOD-2.** A Task with `status == Done` and `isArchived == false` becomes archived when the current time is at or after the **first EoD boundary strictly after its `completedAt`**. Archiving sets `isArchived = true` and `archivedAt = <that boundary instant>`.
   - *Example:* EoD = 02:00. A task completed Tue 23:10 archives at Wed 02:00. A task completed Wed 01:30 also archives at Wed 02:00. A task completed Wed 02:30 archives at Thu 02:00.
+- **EOD-2A.** Archiving is a **system action, not a user edit**, so it MUST NOT move the Task's `updatedAt` (§3.3, which scopes `updatedAt` to user edits). `archivedAt` is the audit trail. Moving it would let a sweep firing after a late edit push `updatedAt` *backwards* to the boundary instant, and §9.3 step 4 resolves by latest `updatedAt` — so a peer holding pre-edit content could then win and the edit would be lost. Un-archiving (ARCH-3) *is* a user action and does move it.
 - **EOD-3.** The archive sweep MUST run at app start, when the app returns to the foreground, and at each EoD boundary while the app is running. A replica that was closed across one or more boundaries MUST archive correctly on its next start.
 - **EOD-4.** Changing `endOfDay` applies to future sweeps only. Already-archived tasks are not un-archived.
 - **EOD-5.** Boundaries are computed in the device's current local time zone. Across a DST change, use the wall-clock time `endOfDay` on each date. If that time does not exist on a date, use the first valid instant after it.
@@ -779,7 +790,12 @@ abstract interface class IdeaRepository {
 
 abstract interface class TaskRepository { /* …, plus archive sweep and restore/unarchive */ }
 abstract interface class SettingsRepository { /* … */ }
-abstract interface class EventLog { Future<void> append(ItemEvent event); }
+abstract interface class EventLog {
+  Future<void> append(ItemEvent event);
+  Future<List<ItemEvent>> forItem(String itemId);
+  /// §11.5.1's cap. Global, not per item. Both numbers are one named constant.
+  Future<int> prune(DateTime nowUtc);
+}
 abstract interface class TombstoneStore { /* … */ }
 
 /// CONVERT-4: creates the Task, deletes the Idea and writes the tombstone
@@ -796,7 +812,9 @@ abstract interface class ConversionService {
 `ideas`, `tasks`, `subtasks`, `tags`, `item_tags`, `idea_tombstones`, `events`, `settings`, `replica`.
 
 - `subtasks` has `task_id` (FK, `ON DELETE CASCADE`) and an explicit `sort_index` integer; the list order in §3.3 is user-controlled and MUST NOT depend on insertion order or id.
-- Tags are normalized into `tags` (id, value, value_normalized) and `item_tags` (item_id, item_kind, tag_id, sort_index), so TAG-6's autocomplete over all active items is one query.
+- **Tags live in two per-kind tables, `idea_tags` and `task_tags`**, each with `(owner_id, value, value_normalized, sort_index)`, a real foreign key to its owner with `ON DELETE CASCADE`, `UNIQUE (owner_id, value_normalized)` — which is what actually enforces TAG-4 — and `UNIQUE (owner_id, sort_index)`. Index `value_normalized` for TAG-6's autocomplete, which is then a `UNION` of two indexed queries.
+
+  *An earlier draft specified a shared `tags` table plus a polymorphic `item_tags`. That was wrong twice over. Keyed on `value_normalized` it forces one global casing, so an Item that stored `@CS` reads back as `@cs`, contradicting TAG-4 and breaking round-trip equality; keyed on `value` it lets `@Work` and `@work` both attach to one Item, which TAG-4 forbids. Carrying the value on the attachment fixes both, because TAG-4's rule is per Item. The polymorphic table was also unable to carry a foreign key, so hard-deleting an Idea (DEL-3) orphaned its tag rows and left them feeding autocomplete; per-kind tables get `ON DELETE CASCADE` for free. There is no separate tag entity in this product — no rename, no metadata, no tag screen — so the join it required bought nothing.*
 - `settings` is a key-value table in the same database file, so there is a single file to back up. Settings are excluded from snapshots (MERGE-3).
 - `replica` holds exactly one row: this device's `replica_id` (UUIDv7, generated on first launch) and `device_name`.
 - `events` implements HIST-2. It is local-only and never travels in a snapshot. Because it is append-only and the app is meant to run for years, it is **capped**: on each app start, delete entries older than 365 days, keeping at least the most recent 5,000 regardless of age. The cap is a constant in one place, so it can be raised if the log ever becomes useful for a better merge strategy (§9.1).
@@ -815,24 +833,42 @@ CREATE UNIQUE INDEX idx_tasks_active_name
 
 The `WHERE` clause is exactly NAME-7: archived and deleted Tasks stop reserving their names. The UI check in NAME-8 and the reactivation check in NAME-9 remain, because they produce good error messages, but the index is the actual guarantee, and a constraint violation surfacing as a `NameCollision` result is a correct (if less pretty) outcome.
 
-Express INV-1 and INV-4 as `CHECK` constraints:
+**Timestamp storage.** Timestamps are stored as **ISO-8601 text**, not as Unix seconds. Drift's `store_date_time_values_as_text` defaults to `false`, which silently truncates every instant to whole seconds; set it to `true` in `zen_data/build.yaml`. Text mode round-trips exactly through `toIso8601String()` / `DateTime.parse`, which is the format §3 already specifies. Settle this before the schema exists — changing it afterwards means rewriting every row, and the precision it destroys cannot be recovered.
+
+**Single-row constraints.** Each is named after the invariant it enforces, so a test can assert *which* one fired rather than merely that something did:
 
 ```sql
-CHECK ((status = 'done') = (completed_at IS NOT NULL))
-CHECK ((is_archived = 1) = (archived_at IS NOT NULL))
-CHECK ((is_deleted  = 1) = (deleted_at  IS NOT NULL))
-CHECK (is_archived = 0 OR status = 'done')            -- INV-3
+CHECK ((status = 'done') = (completed_at IS NOT NULL))          -- INV-1
+CHECK ((is_archived = 1) = (archived_at IS NOT NULL))           -- INV-4
+CHECK ((is_deleted  = 1) = (deleted_at  IS NOT NULL))           -- INV-4
+CHECK (is_archived = 0 OR status = 'done')                      -- INV-3
+CHECK (created_at <= updated_at)                                -- INV-5
+CHECK ((source_idea_id IS NULL) = (source_idea_created_at IS NULL))  -- INV-8
+CHECK (length(created_at) = 24 AND created_at LIKE '%Z')        -- INV-9
 ```
 
-INV-2 spans rows, so it is enforced in the repository inside the write transaction and asserted in tests.
+INV-5's comparison is sound only because every timestamp is the same width (§3, INV-9), which is why the INV-9 checks are worth their cost: they make uniform width a property of the data rather than an assumption about the writer. Apply INV-5 and INV-9 to `ideas`, `tasks` and `subtasks`, and to every timestamp column.
 
-**These constraints are not redundant with the domain's assertions.** `zen_domain` guards its invariants with `assert`, which Dart strips from release builds. In the app you actually run, the `CHECK` constraints and the unique indexes are therefore the *only* enforcement that executes. Treat them as the real guarantee and the assertions as a development aid, not the other way round.
+**Cross-row constraints: INV-2 and INV-7 get triggers.** Both span rows, so no `CHECK` can express them — but a `BEFORE INSERT`/`BEFORE UPDATE` trigger raising `RAISE(ABORT, 'INV-2: …')` can, and unlike a repository check it cannot be bypassed and *can be attacked directly in raw SQL by a test*. A repository-level check would pass its tests identically whether present or absent, which is the failure mode these constraints exist to rule out. Keep the repository checks as well, for their better error messages; the triggers are the guarantee.
+
+Trigger ordering has a consequence for M6, recorded here so it is not later diagnosed as a schema defect: a merge must not be applied row by row. See §11.6.5.
+
+**These constraints are not redundant with the domain's assertions.** `zen_domain` guards its invariants with `assert`, which Dart strips from release builds. In the app you actually run, the `CHECK` constraints, the triggers and the unique indexes are therefore the *only* enforcement that executes. Treat them as the real guarantee and the assertions as a development aid, not the other way round.
+
+**Violations are detected by attempting the write, not by pre-checking it.** A `SELECT` before an `INSERT` has a time-of-check-to-time-of-use window, and it also means the index under test never fires, so M3's definition of done would be satisfied by code that never exercises the constraint at all. Repositories therefore attempt the write and translate the failure into the matching `RuleViolation`. Map on SQLite's **numeric extended result code plus the constraint or table name** — `2067` for a unique-index violation, `275` for a failed `CHECK`, `1811` for a trigger's `RAISE(ABORT)` — never on the message text, which varies between SQLite builds.
+
+Two limits are accepted rather than papered over:
+
+- **INV-6 is not fully expressible in SQL.** NAME-2 and NAME-3 count Unicode extended grapheme clusters; SQLite's `length()` counts UTF-16 code units. The schema enforces a sound superset (non-empty, no line breaks, a generous ceiling) and `ItemName.parse` remains the exact rule, which is safe because it is the only constructor.
+- **SQL cannot assert `name_normalized = normalizeName(name)`.** A stale normalized value would leave the unique index guarding the wrong string, silently. Registering a custom SQL function to close this was considered and rejected: a `CHECK` or index depending on one makes the database unopenable by anything that has not registered it, including recovery tooling. The mitigation is that exactly one mapper writes both columns, and a test drives every write path and re-derives `normalizeName(name)` for every row.
 
 #### 11.5.3 Migrations
 Use Drift's migrator and **generate the schema-migration tests** (`drift_dev schema generate` / `steps`). Two devices will run different versions at times, so every migration ships with a test that a v(N−1) database opens and upgrades correctly. Never edit a released migration; always add a new one.
 
 #### 11.5.4 Archive sweep
-`ArchiveSweeper` implements EOD-3. It runs on app start, on foreground, and on a timer that fires at the next boundary while the app runs. It takes a `Clock`, computes affected tasks with `archiveBoundaryAfter`, and applies them in one transaction. Because the boundary is derived from `completedAt` rather than from "when the sweep last ran", a device closed across several boundaries archives correctly on next start with no catch-up loop.
+`ArchiveSweeper` implements EOD-3. It runs on app start, on foreground, and on a timer that fires at the next boundary while the app runs. It is constructed with a `Clock`, a `TimeZoneRules` and a `SettingsRepository`, reads `endOfDay` and the zone, computes affected tasks with `archiveBoundaryAfter`, and calls the repository to apply them in one transaction.
+
+The repository method it calls takes **every time input as an explicit parameter** — `runArchiveSweep({required DateTime nowUtc, required LocalTime endOfDay, required String zoneId})` — rather than reaching for settings or a clock of its own. That keeps the repository a pure transactional primitive, keeps §11.11's rule that time is always passed in rather than hidden, and lets AC-6 be written without a settings round-trip. Because the boundary is derived from `completedAt` rather than from "when the sweep last ran", a device closed across several boundaries archives correctly on next start with no catch-up loop.
 
 #### 11.5.5 Failure handling
 
@@ -941,7 +977,7 @@ The server MUST capture `S` before applying its merge, so that the snapshot it r
    - If no peers were obtained at all, finish with "nothing to sync" and the per-transport reasons.
 4. **Write a pre-merge backup** (§11.6.6).
 5. `merge([local, ...peers])`.
-6. Apply the result in **one transaction**: upsert ideas and tasks, delete tombstoned ideas, replace subtask lists, union tombstones. Settings and events are untouched. Append a `merged` event per merged component, per §9.3 step 7.
+6. Apply the result in **one transaction**, by **replacing the dataset wholesale** — delete, then insert — rather than upserting row by row. SQLite evaluates unique indexes per statement and has no deferrable constraints, so a row-by-row application transiently collides whenever two Tasks swap names, and the INV-2 trigger (§11.5.2) can abort on a half-applied task. Deleting first removes both hazards, because nothing old remains when the new rows land. Tombstones are unioned; Settings and events are untouched. Append a `merged` event per merged component, per §9.3 step 7.
 7. Call `publish(localSnapshot)` on each enabled transport. For the file transport this writes the snapshot file; for LAN it is a no-op, since the exchange in §11.6.4 already delivered it.
 8. Record `lastSyncAt`, the per-transport outcome, and the merge report.
 
