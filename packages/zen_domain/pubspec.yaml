@@ -19,6 +19,9 @@ dependencies:
   characters: ^1.4.1
   collection: ^1.19.0
   meta: ^1.16.0
+  # Unicode NFC, the first step of §2's name normalization. Pure Dart, no IO,
+  # so §11.1 holds.
+  unorm_dart: ^0.3.2
   # UUIDv7 for entity ids (§3). RFC 9562 v7 support verified on pub.dev.
   uuid: ^4.6.0
 

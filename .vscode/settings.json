@@ -1,0 +1,41 @@
+{
+  // Shared editor settings for Zen. Committed deliberately: the first two
+  // entries mirror what CI enforces (§11.10 runs
+  // `dart format --set-exit-if-changed`), so formatting on save is what stops
+  // a push failing on whitespace alone.
+  //
+  // The Flutter SDK path is deliberately NOT set here. It is pinned by version
+  // in .fvmrc (§11.2) and found on PATH, so this file stays machine-neutral.
+
+  "[dart]": {
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    // dart format wraps at 80.
+    "editor.rulers": [80],
+    "editor.selectionHighlight": false,
+    "editor.suggest.insertMode": "replace",
+    "editor.tabCompletion": "onlySnippets",
+    "editor.wordBasedSuggestions": "off"
+  },
+
+  "dart.lineLength": 80,
+
+  // The analyzer reads these from the root analysis_options.yaml; excluding
+  // them here keeps them out of search results and the file watcher too.
+  "search.exclude": {
+    "**/.dart_tool": true,
+    "**/build": true,
+    "**/pubspec.lock": true
+  },
+  "files.watcherExclude": {
+    "**/.dart_tool/**": true,
+    "**/build/**": true
+  },
+
+  // Requirement IDs (§11.11) are the main way to navigate this codebase:
+  // searching "SUB-8" should find the rule, its doc comment and its test.
+  "search.useIgnoreFiles": true,
+
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true
+}

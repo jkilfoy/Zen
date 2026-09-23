@@ -21,6 +21,7 @@ void main() {
       'characters',
       'collection',
       'meta',
+      'unorm_dart',
       'uuid',
     };
 

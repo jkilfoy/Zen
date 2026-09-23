@@ -36,6 +36,7 @@ from the constraint:
 | Collections | `collection` | `^1.19.0` | **1.19.1** | `ListEquality`/`UnmodifiableListView` for hand-written `==` on immutable entities (§11.11). |
 | Annotations | `meta` | `^1.16.0` | **1.19.0** | `@immutable`, `@useResult`. |
 | IDs | `uuid` | `^4.6.0` | **4.6.0** | UUIDv7 confirmed: 4.6.0 supports RFC 9562 v6, v7 and v8. Pure Dart. |
+| Unicode NFC | `unorm_dart` | `^0.3.2` | **0.3.2** | §2's NFC pass, added by spec v1.2. Unicode 17.0, verified publisher, **no transitive dependencies at all**, so §11.1 holds. |
 | Lints | `lints` | `^6.1.0` | **6.1.0** | `package:flutter_lints` cannot be used here — it would pull Flutter into `zen_domain` (§11.1). See D-M0-3. |
 | Testing (dev) | `test` | `^1.32.0` | **1.32.0** | |
 | YAML (dev) | `yaml` | `^3.1.3` | **3.1.4** | Read by `architecture_test.dart` only; a dev dependency, so it never ships. |
@@ -142,11 +143,20 @@ instead.
 
 ## M1 — `zen_domain` model and rules
 
-**D-M1-1 — "Unicode case folding" (§2) is approximated by `String.toLowerCase`, and no Unicode normal form is applied.**
+**D-M1-1 — "Unicode case folding" (§2) is approximated by `String.toLowerCase`. Superseded in part: NFC is now applied.**
+
+> **Amended 2026-09-23 for `ZEN_SPEC.md` v1.2.** §2 now specifies a Unicode NFC pass as the *first* step of normalization, before trimming, whitespace collapsing and case folding. `normalizeName` does that, over `unorm_dart`. The half of this entry that said "no Unicode normal form is applied" no longer holds; the case-folding half below still does.
+>
+> The spec gives the reason and it is a real defect this avoids: the two target devices have different input stacks, so without NFC the same name typed on Windows and on Android would fail to match during a merge and appear twice after syncing. §11.5.2 adds that the rule has to be settled *before* the `name_normalized` column exists, because changing it later needs a migration that recomputes every row and can fail where two rows that were distinct become equal and collide with the unique index. That is why this landed before M3 rather than with it.
+
+*Original entry, case folding still accurate:*
+
 §2 asks for case folding, which is strictly more than lowercasing: full folding maps `ß` to `ss`, and Dart carries no such table. `toLowerCase` is the simplest behaviour consistent with the document. Two consequences, both accepted: names differing only by a fold-but-not-lowercase pair compare as different, and a composed `é` and a decomposed `é` are different names, which can matter between a Windows and an Android keyboard. `normalizeName` is the single definition of the rule, so the domain, the merge (§9.2) and the `name_normalized` index (§11.5.2) cannot drift apart whatever is decided later.
 
 **D-M1-2 — DST is resolved through a `TimeZoneRules` port, not `package:timezone`.**
-§11.4.4 gives `archiveBoundaryAfter` a `String zoneId`, but `dart:core` cannot resolve an IANA zone. `package:timezone` 0.11.1 declares `package:http` as a runtime dependency, which reaches `dart:io`, so depending on it would breach §11.1 — the constraint the specification calls load-bearing. `zen_domain` therefore declares a one-method port, `Duration offsetAt(DateTime utc, String zoneId)`, and keeps the hard part — gap and ambiguity handling — in `end_of_day.dart`, tested against a fixture with real Toronto transition rules. `zen_data` supplies the adapter over `package:timezone` in M3. **§11.2's package table names no timezone package at all; this is the gap it leaves.**
+§11.4.4 gives `archiveBoundaryAfter` a `String zoneId`, but `dart:core` cannot resolve an IANA zone. `package:timezone` 0.11.1 declares `package:http` as a runtime dependency, which reaches `dart:io`, so depending on it would breach §11.1 — the constraint the specification calls load-bearing. `zen_domain` therefore declares a one-method port, `Duration offsetAt(DateTime utc, String zoneId)`, and keeps the hard part — gap and ambiguity handling — in `end_of_day.dart`, tested against a fixture with real Toronto transition rules. `zen_data` supplies the adapter over `package:timezone` in M3.
+
+> **Confirmed by `ZEN_SPEC.md` v1.2.** §11.2 previously named no timezone package at all. It now carries a `timezone` row reading "**`zen_data` only** … It MUST NOT be a `zen_domain` dependency — it reaches `dart:io`, which §11.1 forbids there. The domain declares the one-method port; the data layer implements it." No code change needed.
 
 **D-M1-3 — Copy for the violations the specification does not give copy for.**
 §11.4.1 requires every `RuleViolation` to carry a message, but §3–§5 supply copy for only some of them. The owner supplied the rest on 2026-09-22. They fall in three groups.
@@ -212,6 +222,14 @@ INV-1 makes `completedAt` a function of `status`, and INV-4 makes `archivedAt` a
 **D-M1-13 — `archiveTask` asserts rather than returning a `Result`.**
 INV-3 allows only a `Done` Task to archive, and the sweeper selects on exactly that (EOD-2, §11.5.4), so anything else is programmer error — which §11.4.1 reserves exceptions for. The same applies to an unknown subtask id and an out-of-range reorder index.
 
+**D-M1-15 — Tag comparison applies NFC too, although §2 only requires it for Item names.**
+§2 defines normalization for names and is silent about tags. The reason it gives applies identically: the same two input stacks produce tags, so without NFC `@café` typed on Windows and on Android would not de-duplicate (TAG-4) and would appear twice in the autocomplete list (TAG-6). `normalizeTag` therefore runs NFC then lowercases. Tags contain no whitespace (TAG-2), so there is nothing to trim or collapse. The simplest behaviour consistent with the document, per §0.1.
+
+**D-M1-16 — The entity assertions are a development aid, not the shipped guarantee.**
+`ZEN_SPEC.md` v1.2 adds to §11.5.2: "`zen_domain` guards its invariants with `assert`, which Dart strips from release builds. In the app you actually run, the `CHECK` constraints and the unique indexes are therefore the *only* enforcement that executes."
+
+That is correct and it qualifies D-M1-12 and D-M1-13. What those entries claim structurally still holds in release, because it is a matter of reachability rather than checking: `completedAt` is not settable through `copyWith` at all, so no caller can desynchronise it from `status` whether assertions run or not. What does *not* survive a release build is the constructor assert that would catch a violation arriving from somewhere else — a hand-built entity, a bad decode, a merge bug. M3 must therefore treat the §11.5.2 `CHECK` constraints and partial unique indexes as the real enforcement, and `datasetInvariantFailures` stays the thing tests and the merge assert against explicitly rather than relying on `assert`.
+
 **D-M1-14 — `Settings` and the repository interfaces were written in M1.**
 §11.13's M1 row lists entities, value objects, `Clock`, the §4 rules and the EoD calculator, but §11.1 places the repository interfaces in `zen_domain`, and `SettingsRepository` cannot be declared without the §3.6 settings record. Both are declarations with no behaviour to test; M3 implements them. §11.8's sync settings are deliberately not added yet — they arrive in M6, with the transports that read them.
 
@@ -222,7 +240,7 @@ that has never run.
 
 | Milestone | Verified | How |
 |---|---|---|
-| M1 | **Yes** | 212 tests green under `dart test`, covering every rule in §4, every invariant in §3.7, the validation in §3.1 and §3.5, the EoD calculator at exact boundary instants including both DST transitions, and AC-1, AC-2, AC-3 and AC-7 as pure domain tests. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean, and `zen_domain` still declares no dependency that touches IO (`test/architecture_test.dart`). |
+| M1 | **Yes** | 223 tests green under `dart test`, covering every rule in §4, every invariant in §3.7, the validation in §3.1 and §3.5, the EoD calculator at exact boundary instants including both DST transitions, and AC-1, AC-2, AC-3 and AC-7 as pure domain tests. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean, and `zen_domain` still declares no dependency that touches IO (`test/architecture_test.dart`). |
 | M0 | **Yes** | Flutter 3.47.5 / Dart 3.13.4 installed to `C:\src\flutter` on 2026-09-22 (archive SHA-256 checked against the release manifest). Every step of §11.10 run locally and green: `pub get` in all four packages, `dart analyze --fatal-infos --fatal-warnings` × 4 with no issues, `dart format --set-exit-if-changed`, `tools/check_no_datetime_now.sh`, `dart test` × 2, `flutter test` × 2. **Not yet observed on the GitHub Actions runner** — the workflow has never executed, since the repository has no remote. See the open item below. |
 
 Nothing in this table may be treated as complete until its column reads "Yes".

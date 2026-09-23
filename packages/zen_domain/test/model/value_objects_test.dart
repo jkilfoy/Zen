@@ -86,6 +86,87 @@ void main() {
     });
   });
 
+  group('§2: NFC normalization', () {
+    // U+00E9 is a precomposed e-acute; U+0065 U+0301 is e followed by a
+    // combining acute accent. They render identically and a user cannot tell
+    // them apart, but they are different strings. Windows and Android input
+    // stacks do not always produce the same one.
+    const String composed = 'Café visit';
+    const String decomposed = 'Café visit';
+
+    test('the two forms really are different strings', () {
+      // Guards the test itself: if this ever fails, the fixtures are wrong and
+      // every assertion below would pass vacuously.
+      expect(composed == decomposed, isFalse);
+      expect(composed.length, isNot(decomposed.length));
+    });
+
+    test('§2: normalizeName maps both forms to the same value', () {
+      expect(normalizeName(composed), normalizeName(decomposed));
+    });
+
+    test('NAME-5: the two forms are the same name', () {
+      expect(
+        ItemName.parse(composed).unwrap(),
+        ItemName.parse(decomposed).unwrap(),
+      );
+    });
+
+    test('NAME-5: and they hash equally, so a Set de-duplicates them', () {
+      final Set<ItemName> names = <ItemName>{
+        ItemName.parse(composed).unwrap(),
+        ItemName.parse(decomposed).unwrap(),
+      };
+      expect(names, hasLength(1));
+    });
+
+    test('NAME-6: so the same idea typed on either device collides', () {
+      // The failure this prevents: without NFC these are two different active
+      // names, the collision check passes on both devices, and the merge
+      // produces two items that look identical on screen.
+      expect(
+        checkNameAvailable(
+          name: ItemName.parse(decomposed).unwrap(),
+          kind: ItemKind.task,
+          activeNormalizedNames: <String>{
+            ItemName.parse(composed).unwrap().normalized,
+          },
+        ).errorOrNull,
+        const TaskNameCollision(),
+      );
+    });
+
+    test('§2: the stored value keeps the form the user typed', () {
+      // NAME-1 specifies trimming and nothing else for the stored name, so
+      // normalization is a comparison concern, not a rewriting one.
+      expect(ItemName.parse(decomposed).unwrap().value, decomposed);
+      expect(ItemName.parse(composed).unwrap().value, composed);
+    });
+
+    test('§2: NFC runs before trimming and whitespace collapsing', () {
+      expect(normalizeName('  $decomposed  '), normalizeName(composed));
+    });
+
+    test('§2: normalization is idempotent', () {
+      final String once = normalizeName(decomposed);
+      expect(normalizeName(once), once);
+    });
+
+    test('§3.4: subtask names get the same treatment', () {
+      expect(
+        SubtaskName.parse(composed).unwrap().normalized,
+        SubtaskName.parse(decomposed).unwrap().normalized,
+      );
+    });
+
+    test('D-M1-1: case folding is still only lowercasing', () {
+      // The accepted limitation, asserted so that it is a recorded decision
+      // rather than an unnoticed gap. If this ever starts failing, full case
+      // folding has arrived and §2 and DECISIONS.md should be updated.
+      expect(normalizeName('straße') == normalizeName('strasse'), isFalse);
+    });
+  });
+
   group('§3.4 SubtaskName', () {
     test('a subtask name is trimmed', () {
       expect(SubtaskName.parse('  Pack  ').unwrap().value, 'Pack');
@@ -194,6 +275,20 @@ void main() {
 
     test('TAG-5: tags display with a leading @', () {
       expect(Tag.parse('work').unwrap().display, '@work');
+    });
+
+    test('D-M1-15: TAG-4 comparison applies NFC, as §2 does for names', () {
+      // §2 specifies the NFC pass for Item names and is silent about tags, but
+      // the same two input stacks produce tags too: without this, @café typed
+      // on Windows and on Android would not de-duplicate (TAG-4) and would
+      // appear twice in the autocomplete list (TAG-6).
+      final Tag composed = Tag.parse('café').unwrap();
+      final Tag decomposed = Tag.parse('café').unwrap();
+
+      expect(composed, decomposed);
+      expect(dedupeTags(<Tag>[composed, decomposed]), hasLength(1));
+      // And the case the user typed still survives.
+      expect(dedupeTags(<Tag>[composed, decomposed]).single.value, 'café');
     });
   });
 

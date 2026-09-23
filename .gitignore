@@ -10,9 +10,13 @@ pubspec.lock.bak
 # FVM
 .fvm/
 
-# IDE
+# IDE. The two shared VS Code files are committed on purpose: settings.json
+# mirrors what CI enforces, and extensions.json prompts for the Dart and
+# Flutter extensions. Everything else under .vscode/ is personal.
 .idea/
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 *.swp
 
 # OS
