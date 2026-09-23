@@ -27,3 +27,7 @@ Thumbs.db
 *.keystore
 *.jks
 key.properties
+
+# Local run logs (e.g. verify.ps1 output redirected to a file).
+tools/result.txt
+tools/*.log

@@ -66,12 +66,30 @@ Everything CI runs (§11.10), in CI's order, in one command:
 .\tools\verify.ps1
 ```
 
-Add `-SkipFlutter` to run only the two pure Dart packages, which is the fast
-inner loop. The script puts the SDK on PATH itself if it is not there already;
-pass `-FlutterBin` if yours is somewhere other than `C:\src\flutter\bin`.
+Its first step is `pub get` in all four packages, and that step is not
+optional — see *Dependency resolution* below. Add `-SkipFlutter` to run only
+the two pure Dart packages, which is the fast inner loop, or `-Clean` to
+discard the current resolution and redo it. The script puts the SDK on PATH
+itself if it is not there already; pass `-FlutterBin` if yours is somewhere
+other than `C:\src\flutter\bin`.
 
 `.github/workflows/ci.yaml` is the authority and `tools/verify.ps1` mirrors it.
 Keep the two in step when either changes.
+
+### Dependency resolution
+
+Each package's `.dart_tool/package_config.json` maps `package:` imports to
+directories in the pub cache. It holds absolute machine paths, so it is
+gitignored and exists only where `pub get` has run — a fresh clone has none.
+
+`dart analyze` does **not** create or repair it. Without it, analysis reports
+every `package:` import as `Target of URI doesn't exist`, which reads like
+hundreds of compile errors in working code. If that happens, the code is fine
+and the resolution is missing:
+
+```powershell
+.\tools\verify.ps1 -Clean
+```
 
 The rules engine on its own runs in about a second, with no emulator:
 

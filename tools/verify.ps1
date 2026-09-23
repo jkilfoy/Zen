@@ -6,12 +6,23 @@
 #
 #   .\tools\verify.ps1              full sequence
 #   .\tools\verify.ps1 -SkipFlutter domain and sync only (a few seconds)
+#   .\tools\verify.ps1 -Clean       delete .dart_tool first and re-resolve
+#
+# The first step is `pub get`, exactly as in CI. It is not optional: each
+# package's .dart_tool/package_config.json is the package resolution, it is
+# gitignored because it holds absolute machine paths, and `dart analyze` does
+# NOT regenerate it. Without it every `package:` import reports as
+# "Target of URI doesn't exist" and the run looks like the code is broken.
 
 [CmdletBinding()]
 param(
     # Skip the two Flutter packages. `dart test` on zen_domain is the fast
     # inner loop; `flutter test` costs a few seconds of startup.
     [switch]$SkipFlutter,
+
+    # Delete each package's .dart_tool before resolving. Use when resolution
+    # looks wrong rather than deleting things by hand.
+    [switch]$Clean,
 
     # Where the Flutter SDK lives, if it is not already on PATH.
     [string]$FlutterBin = 'C:\src\flutter\bin'
@@ -50,6 +61,25 @@ if ($SkipFlutter) { $allPackages = $dartPackages }
 Push-Location $repoRoot
 try {
     & flutter --version | Select-Object -First 1
+    Write-Host "dart: $((Get-Command dart).Source)"
+
+    if ($Clean) {
+        foreach ($package in $allPackages) {
+            $dartTool = Join-Path (Join-Path 'packages' $package) '.dart_tool'
+            if (Test-Path $dartTool) {
+                Remove-Item $dartTool -Recurse -Force
+                Write-Host "removed $dartTool"
+            }
+        }
+    }
+
+    # Resolve dependencies first, as ci.yaml does. See the header comment.
+    foreach ($package in $allPackages) {
+        Invoke-Step "pub get $package" {
+            Push-Location (Join-Path 'packages' $package)
+            try { & flutter pub get | Out-Null } finally { Pop-Location }
+        }
+    }
 
     # §11.10 step 4.
     Invoke-Step 'dart format' { & dart format --output=none --set-exit-if-changed . }
