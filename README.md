@@ -60,18 +60,29 @@ Without FVM, install Flutter **3.47.5** (Dart 3.13.4) directly and drop the
 
 ## Everyday commands
 
-```bash
-# The whole rules engine, in about a second, with no emulator:
-cd packages/zen_domain && dart test
+Everything CI runs (§11.10), in CI's order, in one command:
 
-# Everything CI runs, in CI's order (§11.10):
-for p in zen_domain zen_data zen_sync zen_app; do (cd "packages/$p" && dart analyze --fatal-infos --fatal-warnings); done
-dart format --output=none --set-exit-if-changed .
-bash tools/check_no_datetime_now.sh
-(cd packages/zen_domain && dart test)
-(cd packages/zen_sync   && dart test)
-(cd packages/zen_data   && fvm flutter test)
-(cd packages/zen_app    && fvm flutter test)
+```powershell
+.\tools\verify.ps1
+```
+
+Add `-SkipFlutter` to run only the two pure Dart packages, which is the fast
+inner loop. The script puts the SDK on PATH itself if it is not there already;
+pass `-FlutterBin` if yours is somewhere other than `C:\src\flutter\bin`.
+
+`.github/workflows/ci.yaml` is the authority and `tools/verify.ps1` mirrors it.
+Keep the two in step when either changes.
+
+The rules engine on its own runs in about a second, with no emulator:
+
+```bash
+cd packages/zen_domain && dart test
+```
+
+A single file, or a single test by name:
+
+```bash
+dart test test/time/end_of_day_test.dart
 ```
 
 ## Running the app
