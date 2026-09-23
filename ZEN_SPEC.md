@@ -2,7 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.1 |
+| Document version | 1.2 |
+| Changes in 1.2 | Post-M1 review. **§9.1: `ReplicaSnapshot` and `MergeResult` are `zen_domain` types** — §11.3 previously placed the snapshot in `zen_sync`, which would have inverted the dependency direction and blocked M2. **§2: name normalization now includes a Unicode NFC pass**, and §11.5.2 notes why the rule must be settled before the schema exists. §11.2 gained the `unorm_dart`, `characters` and `timezone` rows, the last with the constraint that it belongs to `zen_data` only. §11.5.2 notes that `assert` is stripped in release builds, so the database constraints are the only enforcement that ships. |
 | Changes in 1.1 | Milestone definitions of done now cite the correct acceptance scenarios (M2 previously cited conversion scenarios as merge ones). Added §11.13.1 on which milestones can be verified without real hardware, §11.5.5 on database failure handling, and an event-log cap in §11.5.1. |
 | Changes from 0.4 | §11 written in full: Flutter + Drift + Riverpod, four-package layout, schema and constraints, snapshot format, both sync transports, pre-merge backup, packaging, CI, testing requirements and the agent's implementation order. §3.6, §5.11 and §9.2 point at it. §12 became the declined-additions record; §13 gained the architecture decisions. |
 | Status | **COMPLETE — ready to hand to an implementing agent.** Every question raised in drafting is resolved (§13). §12 records additions that were considered and deliberately left out. |
@@ -91,7 +92,7 @@ Permanently out of scope, per principle 1.2.3: MITs, Big Rocks, Single Goal trac
 | **Active Item** | An Idea that exists and is not tombstoned (all live Ideas are active), or a Task with `isDeleted == false` **and** `isArchived == false`. Name uniqueness (§3.1) and name-based merge matching (§9.2) apply only to active Items. |
 | **Source / Replica** | One installation of the app with its own local database (e.g. the Windows install, the Android install). |
 | **Merge** | Combining the datasets of two or more replicas into one (§9). |
-| **Normalized name** | An Item name after trimming, collapsing internal whitespace runs to a single space, and applying Unicode case folding. Used for all equality comparisons between names (§3.1). |
+| **Normalized name** | An Item name after (1) **Unicode NFC normalization**, (2) trimming, (3) collapsing internal whitespace runs to a single space, and (4) case folding, in that order. Used for all equality comparisons between names (§3.1), for the `name_normalized` column and its uniqueness indexes (§11.5.2), and for name matching during a merge (§9.2). One function is the sole definition of this, so the three cannot drift apart. **NFC matters because the two devices have different input stacks:** without it, a composed `é` and a decomposed `é` are different names, so the same idea typed on Windows and on Android would fail to match during a merge and appear twice after syncing. Case folding is approximated by lowercasing, which is a documented and accepted limitation (`ß` and `ss` remain distinct). |
 
 ---
 
@@ -445,6 +446,10 @@ The screen has three modes with the same layout: Add, Edit, and Convert (pre-fil
   MergeResult     = { ideas[], tasks[], tombstones[], mergeReport }
   ```
 
+  **`ReplicaSnapshot` and `MergeResult` are `zen_domain` types**, declared in `merge/replica_snapshot.dart`. They hold domain entities and nothing else — no wire metadata, no JSON. `MergeStrategy` lives in `zen_domain` (§11.1), so placing the snapshot type anywhere else would make `zen_domain` depend on `zen_sync` and invert the dependency direction the architecture rests on.
+
+  `zen_sync` owns only the **envelope and the codec** (§11.6.1): `formatVersion`, `deviceName`, `generatedAt`, `appVersion`, and the JSON encoding of the whole thing. It wraps a `ReplicaSnapshot`; it is not one. A merge never sees the envelope, which is why the merge can be tested with no serialization at all.
+
   The strategy is chosen through dependency injection. The MVP ships `NameUnionMergeStrategy` (§9.3).
 - **MERGE-2.** The merge MUST be **deterministic**: the same inputs in any order produce the same output, so two replicas running it independently reach identical results.
 - **MERGE-3.** Settings (§3.6) are per replica and are never merged.
@@ -582,6 +587,9 @@ Target the Flutter **stable** channel, pinned to an exact version in `.fvmrc` an
 | Role | Package | Notes |
 |---|---|---|
 | Database | `drift`, `drift_flutter`, `drift_dev`, `build_runner` | Since drift 2.32, SQLite is bundled automatically; `sqlite3_flutter_libs` is no longer needed. |
+| Unicode normalization | `unorm_dart` | **`zen_domain`.** Pure Dart, no IO, so §11.1 holds. Supplies the NFC pass in §2's normalization. |
+| Grapheme clusters | `characters` | **`zen_domain`.** NAME-2 counts user-perceived characters, which `dart:core` cannot do. |
+| IANA time zones | `timezone` | **`zen_data` only.** Supplies the `TimeZoneRules` adapter (§11.4.3). It MUST NOT be a `zen_domain` dependency — it reaches `dart:io`, which §11.1 forbids there. The domain declares the one-method port; the data layer implements it. |
 | Paths | `path_provider`, `path` | |
 | State | `flutter_riverpod` (3.x) | Plain `Notifier` / `NotifierProvider` / `StreamProvider`. No annotations, no build step. |
 | Routing | `go_router` | |
@@ -619,7 +627,7 @@ zen/
 │  │  │  ├─ rules/            task_rules.dart, subtask_rules.dart,
 │  │  │  │                    conversion_rules.dart, name_rules.dart
 │  │  │  ├─ time/             clock.dart, end_of_day.dart
-│  │  │  ├─ merge/            merge_strategy.dart,
+│  │  │  ├─ merge/            replica_snapshot.dart, merge_strategy.dart,
 │  │  │  │                    name_union_merge_strategy.dart, merge_report.dart
 │  │  │  ├─ repository/       interfaces only
 │  │  │  └─ result.dart       Result<T, E>, RuleViolation
@@ -632,7 +640,8 @@ zen/
 │  │  └─ test/                includes generated migration tests
 │  ├─ zen_sync/
 │  │  ├─ lib/src/
-│  │  │  ├─ snapshot/         ReplicaSnapshot, JSON codec, versioning
+│  │  │  ├─ snapshot/         JSON codec, envelope, versioning
+│  │  │  │                    (the ReplicaSnapshot *type* is in zen_domain)
 │  │  │  ├─ transport/        sync_transport.dart, file_transport.dart,
 │  │  │  │                    lan_transport.dart, lan_server.dart, crypto.dart
 │  │  │  ├─ backup/           pre-merge backup writer and restorer
@@ -749,7 +758,7 @@ abstract interface class ConversionService {
 - `events` implements HIST-2. It is local-only and never travels in a snapshot. Because it is append-only and the app is meant to run for years, it is **capped**: on each app start, delete entries older than 365 days, keeping at least the most recent 5,000 regardless of age. The cap is a constant in one place, so it can be raised if the log ever becomes useful for a better merge strategy (§9.1).
 
 #### 11.5.2 Constraints — NAME-6 and NAME-7 in the schema
-Both `ideas` and `tasks` carry a `name_normalized` column, written on every insert and update. Uniqueness is then a **partial unique index**, which makes a duplicate impossible rather than merely unlikely:
+Both `ideas` and `tasks` carry a `name_normalized` column, written on every insert and update, using the single normalization function from §2 — **including its NFC pass**. Changing the normalization rule after this column exists means recomputing every row, and such a migration can *fail* where two rows that were distinct become equal and collide with the unique index below. So the rule must be settled before M3 creates the schema, not after. Uniqueness is then a **partial unique index**, which makes a duplicate impossible rather than merely unlikely:
 
 ```sql
 CREATE UNIQUE INDEX idx_ideas_active_name
@@ -772,6 +781,8 @@ CHECK (is_archived = 0 OR status = 'done')            -- INV-3
 ```
 
 INV-2 spans rows, so it is enforced in the repository inside the write transaction and asserted in tests.
+
+**These constraints are not redundant with the domain's assertions.** `zen_domain` guards its invariants with `assert`, which Dart strips from release builds. In the app you actually run, the `CHECK` constraints and the unique indexes are therefore the *only* enforcement that executes. Treat them as the real guarantee and the assertions as a development aid, not the other way round.
 
 #### 11.5.3 Migrations
 Use Drift's migrator and **generate the schema-migration tests** (`drift_dev schema generate` / `steps`). Two devices will run different versions at times, so every migration ships with a test that a v(N−1) database opens and upgrades correctly. Never edit a released migration; always add a new one.
