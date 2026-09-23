@@ -1,0 +1,23 @@
+-- §3.6, §11.5.1. Per-replica settings, and this installation's identity.
+--
+-- Settings live in the same database file, so there is a single file to back
+-- up, and they are excluded from snapshots (MERGE-3). A key-value shape keeps
+-- §11.8's sync settings from needing a migration when M6 adds them.
+CREATE TABLE settings (
+  -- Named `setting_key` rather than `key`, which is a SQL keyword.
+  setting_key TEXT NOT NULL PRIMARY KEY,
+  setting_value TEXT NOT NULL
+) STRICT AS SettingRow;
+
+-- §11.5.1. "`replica` holds exactly one row."
+--
+-- The fixed primary key is what makes that true of the data rather than of the
+-- code: a second row collides with `id = 1`, and any other id fails the CHECK.
+CREATE TABLE replica (
+  id INTEGER NOT NULL PRIMARY KEY,
+  replica_id TEXT NOT NULL,
+  device_name TEXT NOT NULL,
+
+  CONSTRAINT single_row_replica CHECK (id = 1),
+  CONSTRAINT replica_id_present CHECK (replica_id <> '')
+) STRICT AS ReplicaRow;

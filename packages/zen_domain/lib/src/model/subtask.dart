@@ -3,6 +3,7 @@ library;
 
 import 'package:meta/meta.dart';
 
+import '../time/instant_precision.dart';
 import 'enums.dart';
 import 'subtask_name.dart';
 
@@ -55,14 +56,19 @@ final class Subtask {
 
   /// §3.7. The invariants this subtask breaks, empty when it is well-formed.
   ///
-  /// INV-1 (`completedAt != null` ⇔ `status == Done`) and INV-5
-  /// (`createdAt <= updatedAt`). INV-2 spans a Task and its subtasks, so it is
-  /// checked on [Task] instead.
+  /// INV-1 (`completedAt != null` ⇔ `status == Done`), INV-5
+  /// (`createdAt <= updatedAt`) and INV-9 (millisecond precision). INV-2 spans
+  /// a Task and its subtasks, so it is checked on [Task] instead.
   List<String> get invariantFailures => <String>[
     if ((status == TaskStatus.done) != (completedAt != null))
       'INV-1: status is $status but completedAt is $completedAt',
     if (createdAt.isAfter(updatedAt))
       'INV-5: createdAt $createdAt is after updatedAt $updatedAt',
+    ...timestampPrecisionFailures(<String, DateTime?>{
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+      'completedAt': completedAt,
+    }),
   ];
 
   /// §4.3, INV-1. Returns this subtask with [target] as its status, setting or

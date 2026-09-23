@@ -1,0 +1,165 @@
+-- §3.3, §3.4. Something the user intends to complete, and its checklist.
+--
+-- Tasks are never hard-deleted (principle 1.2.4): `is_deleted` hides one
+-- (DEL-1) and `is_archived` retires a completed one after End of Day (EOD-2).
+CREATE TABLE tasks (
+  id TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL,
+  -- §2, §11.5.2. See the note on `ideas.name_normalized`.
+  name_normalized TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  -- TaskStatus.name: 'todo' | 'blocked' | 'done'. Stored by name rather than
+  -- by index, because `TaskStatus` is declared in merge-precedence order
+  -- (§9.3 step 4) and a later reordering must not silently rewrite the data.
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT NULL,
+  is_archived INTEGER NOT NULL DEFAULT 0,
+  archived_at TEXT NULL,
+  is_deleted INTEGER NOT NULL DEFAULT 0,
+  deleted_at TEXT NULL,
+  source_idea_id TEXT NULL,
+  source_idea_created_at TEXT NULL,
+
+  CONSTRAINT inv1_tasks
+    CHECK ((status = 'done') = (completed_at IS NOT NULL)),
+  CONSTRAINT inv3_tasks CHECK (is_archived = 0 OR status = 'done'),
+  CONSTRAINT inv4_tasks_archived
+    CHECK ((is_archived = 1) = (archived_at IS NOT NULL)),
+  CONSTRAINT inv4_tasks_deleted
+    CHECK ((is_deleted = 1) = (deleted_at IS NOT NULL)),
+  CONSTRAINT inv5_tasks CHECK (created_at <= updated_at),
+  CONSTRAINT inv8_tasks CHECK (
+    (source_idea_id IS NULL) = (source_idea_created_at IS NULL)
+  ),
+  CONSTRAINT inv9_tasks_created_at
+    CHECK (length(created_at) = 24 AND created_at LIKE '%Z'),
+  CONSTRAINT inv9_tasks_updated_at
+    CHECK (length(updated_at) = 24 AND updated_at LIKE '%Z'),
+  CONSTRAINT inv9_tasks_completed_at CHECK (
+    completed_at IS NULL
+    OR (length(completed_at) = 24 AND completed_at LIKE '%Z')
+  ),
+  CONSTRAINT inv9_tasks_archived_at CHECK (
+    archived_at IS NULL
+    OR (length(archived_at) = 24 AND archived_at LIKE '%Z')
+  ),
+  CONSTRAINT inv9_tasks_deleted_at CHECK (
+    deleted_at IS NULL
+    OR (length(deleted_at) = 24 AND deleted_at LIKE '%Z')
+  ),
+  CONSTRAINT inv9_tasks_source_idea_created_at CHECK (
+    source_idea_created_at IS NULL
+    OR (length(source_idea_created_at) = 24
+        AND source_idea_created_at LIKE '%Z')
+  ),
+  CONSTRAINT inv6_tasks_name CHECK (
+    name <> '' AND name = trim(name)
+    AND instr(name, char(10)) = 0 AND instr(name, char(13)) = 0
+    AND length(name) <= 16000
+  ),
+  CONSTRAINT inv6_tasks_name_normalized CHECK (name_normalized <> ''),
+  CONSTRAINT inv6_tasks_description CHECK (length(description) <= 160000),
+  CONSTRAINT status_tasks CHECK (status IN ('todo', 'blocked', 'done')),
+  CONSTRAINT bool_tasks_is_archived CHECK (is_archived IN (0, 1)),
+  CONSTRAINT bool_tasks_is_deleted CHECK (is_deleted IN (0, 1))
+) STRICT AS TaskRow;
+
+-- NAME-6, NAME-7, §11.5.2. The `WHERE` clause is exactly NAME-7: archived and
+-- deleted Tasks stop reserving their names, which is what makes recurring work
+-- possible (AC-9) and what AC-10 runs into.
+CREATE UNIQUE INDEX idx_tasks_active_name ON tasks (name_normalized)
+  WHERE is_deleted = 0 AND is_archived = 0;
+
+-- TODO-1, TODO-2, ARCH-1. The To Do list and the archive are both selections
+-- on the two flags ordered by a timestamp.
+CREATE INDEX idx_tasks_active ON tasks (is_deleted, is_archived, created_at);
+
+-- EOD-2, §11.5.4. The sweep selects Done, unarchived, undeleted Tasks.
+CREATE INDEX idx_tasks_completed_at ON tasks (completed_at);
+
+-- §3.4. A checklist entry belonging to exactly one Task.
+--
+-- `sort_index` is explicit because the list order in §3.3 is user-controlled
+-- and MUST NOT depend on insertion order or id (§11.5.1). `ON DELETE CASCADE`
+-- needs `PRAGMA foreign_keys = ON`, which `AppDatabase` sets on every
+-- connection (§11.5.5).
+CREATE TABLE subtasks (
+  id TEXT NOT NULL PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks (id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  sort_index INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT NULL,
+
+  CONSTRAINT inv1_subtasks
+    CHECK ((status = 'done') = (completed_at IS NOT NULL)),
+  CONSTRAINT inv5_subtasks CHECK (created_at <= updated_at),
+  CONSTRAINT inv9_subtasks_created_at
+    CHECK (length(created_at) = 24 AND created_at LIKE '%Z'),
+  CONSTRAINT inv9_subtasks_updated_at
+    CHECK (length(updated_at) = 24 AND updated_at LIKE '%Z'),
+  CONSTRAINT inv9_subtasks_completed_at CHECK (
+    completed_at IS NULL
+    OR (length(completed_at) = 24 AND completed_at LIKE '%Z')
+  ),
+  -- §3.4. A subtask name is 1-1000 characters, so NAME-2's three-character
+  -- minimum does not apply; the shape rules do. NAME-11 exempts it from
+  -- uniqueness, which is why nothing here is unique but `(task_id, sort_index)`.
+  CONSTRAINT inv6_subtasks_name CHECK (
+    name <> '' AND name = trim(name)
+    AND instr(name, char(10)) = 0 AND instr(name, char(13)) = 0
+    AND length(name) <= 16000
+  ),
+  CONSTRAINT status_subtasks CHECK (status IN ('todo', 'blocked', 'done')),
+  CONSTRAINT sort_index_subtasks CHECK (sort_index >= 0),
+  -- §11.5.1. Without this the user-visible order is undefined on a tie.
+  CONSTRAINT unique_subtasks_order UNIQUE (task_id, sort_index)
+) STRICT AS SubtaskRow;
+
+CREATE INDEX idx_subtasks_task ON subtasks (task_id, sort_index);
+
+-- INV-2, §11.5.2. "task.status == Done implies every subtask has status ==
+-- Done." Cross-row, so no CHECK can express it. §11.5.2 gives it triggers
+-- rather than a repository-only check, because a repository check would pass
+-- its tests identically whether present or absent — the failure mode these
+-- constraints exist to rule out. The repository checks remain, for their better
+-- error messages; these are the guarantee.
+--
+-- Both directions, and both statement kinds, because the pair can be broken
+-- from either end: by opening a subtask under a Done Task, or by completing a
+-- Task that still has an open subtask.
+CREATE TRIGGER inv2_subtask_insert BEFORE INSERT ON subtasks
+WHEN NEW.status <> 'done'
+  AND (SELECT status FROM tasks WHERE id = NEW.task_id) = 'done'
+BEGIN
+  SELECT RAISE(ABORT, 'INV-2: a Done task cannot gain an open subtask');
+END;
+
+CREATE TRIGGER inv2_subtask_update BEFORE UPDATE ON subtasks
+WHEN NEW.status <> 'done'
+  AND (SELECT status FROM tasks WHERE id = NEW.task_id) = 'done'
+BEGIN
+  SELECT RAISE(ABORT, 'INV-2: a Done task cannot hold an open subtask');
+END;
+
+CREATE TRIGGER inv2_task_insert BEFORE INSERT ON tasks
+WHEN NEW.status = 'done'
+  AND EXISTS (
+    SELECT 1 FROM subtasks WHERE task_id = NEW.id AND status <> 'done'
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'INV-2: this task has subtasks that are not Done');
+END;
+
+CREATE TRIGGER inv2_task_update BEFORE UPDATE ON tasks
+WHEN NEW.status = 'done'
+  AND EXISTS (
+    SELECT 1 FROM subtasks WHERE task_id = NEW.id AND status <> 'done'
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'INV-2: this task has subtasks that are not Done');
+END;

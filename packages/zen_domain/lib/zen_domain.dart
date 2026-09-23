@@ -10,7 +10,8 @@
 /// * `model/` — [Idea], [Task], [Subtask], [Tag], [ItemName], the enums.
 /// * `merge/` — [MergeStrategy], [NameUnionMergeStrategy] and §9's types.
 /// * `rules/` — the rules of §4, each returning a [Result].
-/// * `time/` — [Clock], [LocalTime], [TimeZoneRules], the End-of-Day calculator.
+/// * `time/` — [Clock], [LocalTime], [TimeZoneRules], the End-of-Day calculator,
+///   and §3's millisecond-precision rule.
 /// * `ids/` — [IdGenerator].
 /// * `repository/` — interfaces only; `zen_data` implements them.
 /// * `result.dart` — [Result] and every [RuleViolation].
@@ -50,5 +51,6 @@ export 'src/rules/subtask_rules.dart';
 export 'src/rules/task_rules.dart';
 export 'src/time/clock.dart';
 export 'src/time/end_of_day.dart';
+export 'src/time/instant_precision.dart';
 export 'src/time/local_time.dart';
 export 'src/time/time_zone_rules.dart';

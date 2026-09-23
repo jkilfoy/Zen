@@ -53,6 +53,15 @@ function Invoke-Step {
     }
 }
 
+# The Drift output D-M0-12 commits on purpose. Kept beside the packages list
+# so the two are read together.
+$generatedPaths = @(
+    'packages/zen_data/lib/src/database.g.dart',
+    'packages/zen_data/lib/src/schema_versions.dart',
+    'packages/zen_data/drift_schemas',
+    'packages/zen_data/test/generated_migrations'
+)
+
 $dartPackages = @('zen_domain', 'zen_sync')
 $flutterPackages = @('zen_data', 'zen_app')
 $allPackages = $dartPackages + $flutterPackages
@@ -81,7 +90,33 @@ try {
         }
     }
 
-    # §11.10 step 4.
+    # M3. Drift generates `database.g.dart` and the schema-migration harness,
+    # and D-M0-12 commits that output on purpose. "Committed but not
+    # regenerated" is therefore a real failure mode, and it fails late and
+    # confusingly if nothing looks for it — so regenerate, then require the
+    # working tree to be unchanged.
+    Invoke-Step 'build_runner zen_data' {
+        Push-Location (Join-Path 'packages' 'zen_data')
+        try { & dart run build_runner build } finally { Pop-Location }
+    }
+    # Scoped to the generated paths only, so that work in progress elsewhere in
+    # the package does not read as stale generated output. `git status` rather
+    # than `git diff`, so that generated output which was never added at all is
+    # caught too.
+    Invoke-Step 'generated output is current' {
+        $dirty = & git status --porcelain -- $generatedPaths
+        if ($dirty) {
+            $dirty | ForEach-Object { Write-Host "   $_" }
+            Write-Host '   Generated Drift output is stale or unstaged. Commit the'
+            Write-Host '   result of `dart run build_runner build`.' -ForegroundColor Yellow
+            $global:LASTEXITCODE = 1
+        } else {
+            $global:LASTEXITCODE = 0
+        }
+    }
+
+    # §11.10 step 4. Runs after the build so that generated output is checked
+    # too — the analyzer excludes it, the formatter cannot.
     Invoke-Step 'dart format' { & dart format --output=none --set-exit-if-changed . }
 
     # §11.11: the DateTime.now() ban outside zen_app.

@@ -1,0 +1,71 @@
+import 'tombstones.drift';
+
+-- §3.2. Something the user might do, but might never do.
+--
+-- Every live Idea is active (§2), so NAME-6's uniqueness index carries no
+-- `WHERE` clause — unlike `tasks`, where NAME-7 frees the names of archived and
+-- deleted rows.
+CREATE TABLE ideas (
+  id TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL,
+  -- §2, §11.5.2. `normalizeName(name)`, written on every insert and update by
+  -- the one mapper that writes this table. SQL cannot assert that it agrees
+  -- with `name`; `mapping/` is the single writer and a test re-derives it for
+  -- every row (§11.5.2).
+  name_normalized TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  -- Timeframe.name: 'now' | 'soon' | 'later' | 'distant'.
+  timeframe TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+
+  CONSTRAINT inv5_ideas CHECK (created_at <= updated_at),
+  CONSTRAINT inv9_ideas_created_at
+    CHECK (length(created_at) = 24 AND created_at LIKE '%Z'),
+  CONSTRAINT inv9_ideas_updated_at
+    CHECK (length(updated_at) = 24 AND updated_at LIKE '%Z'),
+  CONSTRAINT inv6_ideas_name CHECK (
+    name <> '' AND name = trim(name)
+    AND instr(name, char(10)) = 0 AND instr(name, char(13)) = 0
+    AND length(name) <= 16000
+  ),
+  CONSTRAINT inv6_ideas_name_normalized CHECK (name_normalized <> ''),
+  CONSTRAINT inv6_ideas_context CHECK (length(context) <= 160000),
+  CONSTRAINT timeframe_ideas
+    CHECK (timeframe IN ('now', 'soon', 'later', 'distant'))
+) STRICT AS IdeaRow;
+
+-- NAME-6, §11.5.2. The actual guarantee that two active Ideas cannot share a
+-- name. The UI check in NAME-8 remains because it produces a better message,
+-- but a constraint violation surfacing as an `IdeaNameCollision` is a correct
+-- (if less pretty) outcome.
+CREATE UNIQUE INDEX idx_ideas_active_name ON ideas (name_normalized);
+
+-- IDEAS-4. The Ideas list orders by `createdAt` ascending within each group.
+CREATE INDEX idx_ideas_created_at ON ideas (created_at);
+
+-- INV-7, §11.5.2. "Every tombstoned Idea id is absent from the Ideas table."
+--
+-- A cross-row invariant, so no CHECK can express it — but a trigger can, and
+-- unlike a repository check it cannot be bypassed and *can be attacked directly
+-- in raw SQL by a test*. The two directions are separate triggers because
+-- either table can be written first: CONVERT-4 and DEL-3 both delete the Idea
+-- and then insert the tombstone, and the second trigger is what makes that
+-- order compulsory rather than merely conventional.
+CREATE TRIGGER inv7_idea_insert BEFORE INSERT ON ideas
+WHEN EXISTS (SELECT 1 FROM idea_tombstones WHERE id = NEW.id)
+BEGIN
+  SELECT RAISE(ABORT, 'INV-7: this Idea id is tombstoned');
+END;
+
+CREATE TRIGGER inv7_idea_update BEFORE UPDATE ON ideas
+WHEN EXISTS (SELECT 1 FROM idea_tombstones WHERE id = NEW.id)
+BEGIN
+  SELECT RAISE(ABORT, 'INV-7: this Idea id is tombstoned');
+END;
+
+CREATE TRIGGER inv7_tombstone_insert BEFORE INSERT ON idea_tombstones
+WHEN EXISTS (SELECT 1 FROM ideas WHERE id = NEW.id)
+BEGIN
+  SELECT RAISE(ABORT, 'INV-7: this Idea is still present; delete it first');
+END;

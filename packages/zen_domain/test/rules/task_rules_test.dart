@@ -294,6 +294,55 @@ void main() {
       expect(archived.completedAt, at(5));
     });
 
+    test('EOD-2A: archiving does not move updatedAt', () {
+      final Task done = aTask(
+        status: TaskStatus.done,
+        createdAt: at(0),
+        updatedAt: at(5),
+        completedAt: at(5),
+      );
+
+      final Task archived = archiveTask(done, at(600));
+
+      expect(archived.updatedAt, at(5), reason: 'EOD-2A: a system action');
+      expect(archived.archivedAt, at(600), reason: 'the audit trail instead');
+    });
+
+    test('EOD-2A: a late edit is not pushed backwards by a late sweep', () {
+      // The app is running, the boundary passes, and the user renames the Task
+      // before the sweep fires. Without EOD-2A the sweep would rewrite
+      // updatedAt to the boundary instant, which is *earlier* than the rename,
+      // and §9.3 step 4 would then let a peer holding pre-edit content win.
+      final DateTime boundary = at(600);
+      final Task renamedAfterBoundary = aTask(
+        status: TaskStatus.done,
+        createdAt: at(0),
+        updatedAt: at(660),
+        completedAt: at(5),
+      );
+
+      final Task archived = archiveTask(renamedAfterBoundary, boundary);
+
+      expect(archived.updatedAt, at(660));
+      expect(archived.updatedAt.isAfter(boundary), isTrue);
+      expect(archived.invariantFailures, isEmpty);
+    });
+
+    test('ARCH-3: un-archiving is a user action and does move updatedAt', () {
+      final Task archived = aTask(
+        status: TaskStatus.done,
+        createdAt: at(0),
+        updatedAt: at(5),
+        completedAt: at(5),
+        isArchived: true,
+        archivedAt: at(600),
+      );
+
+      final Task result = unarchiveTask(archived, at(700)).unwrap();
+
+      expect(result.updatedAt, at(700));
+    });
+
     test('EOD-6: an archived Task leaves the active set', () {
       expect(
         archiveTask(aTask(status: TaskStatus.done), at(600)).isActive,

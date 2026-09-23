@@ -1,0 +1,17 @@
+-- §2, DEL-3, §9.3 step 1. Proof that an Idea once existed and was removed.
+--
+-- Keyed on `id` alone, which is what §9.3 step 1 relies on when it reduces the
+-- merged tombstones to one per Idea. Tombstones carry no name (DEL-3, Q3), so
+-- a name that was deleted may be created again as a new Idea with a new id and
+-- the tombstone will not affect it (AC-18).
+CREATE TABLE idea_tombstones (
+  id TEXT NOT NULL PRIMARY KEY,
+  deleted_at TEXT NOT NULL,
+  -- TombstoneReason.name: 'deleted' (DEL-3) or 'converted' (CONVERT-4).
+  reason TEXT NOT NULL,
+
+  CONSTRAINT inv9_idea_tombstones_deleted_at
+    CHECK (length(deleted_at) = 24 AND deleted_at LIKE '%Z'),
+  CONSTRAINT reason_idea_tombstones
+    CHECK (reason IN ('deleted', 'converted'))
+) STRICT AS IdeaTombstoneRow;

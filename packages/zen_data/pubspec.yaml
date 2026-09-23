@@ -1,8 +1,7 @@
 name: zen_data
 description: >-
   Drift schema, migrations and repository implementations for Zen
-  (ZEN_SPEC.md §11.5). Drift's dependencies are added in M3 and the resolved
-  versions recorded in DECISIONS.md.
+  (ZEN_SPEC.md §11.5).
 publish_to: none
 version: 0.1.0
 
@@ -11,12 +10,25 @@ environment:
   flutter: ">=3.47.0"
 
 dependencies:
+  drift: ^2.35.0
+  drift_flutter: ^0.3.1
   flutter:
     sdk: flutter
+  # §11.5.2 translates SQLite's numeric extended result codes into
+  # RuleViolations, so `SqliteException` is part of this package's runtime
+  # vocabulary rather than only its tests. Drift depends on it transitively;
+  # declaring it directly is what `depend_on_referenced_packages` asks for.
+  sqlite3: ^3.6.0
+  # §11.2: `timezone` belongs to zen_data only. It reaches dart:io, which
+  # §11.1 forbids in zen_domain, so the domain declares the one-method
+  # TimeZoneRules port (D-M1-2) and this package supplies the adapter.
+  timezone: ^0.11.1
   zen_domain:
     path: ../zen_domain
 
 dev_dependencies:
+  build_runner: ^2.16.1
+  drift_dev: ^2.35.0
+  flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
-  flutter_lints: ^6.0.0

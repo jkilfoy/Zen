@@ -42,6 +42,24 @@ jobs:
             echo "::endgroup::"
           done
 
+      # M3. Drift's generated output is committed on purpose (D-M0-12), so
+      # "committed but not regenerated" is a real failure mode. Regenerating
+      # and then requiring a clean tree catches it here instead of at the
+      # confusing moment it would otherwise surface.
+      - name: Regenerate Drift output
+        run: dart run build_runner build
+        working-directory: packages/zen_data
+
+      - name: Check generated output is current
+        run: |
+          generated='packages/zen_data/lib/src/database.g.dart packages/zen_data/lib/src/schema_versions.dart packages/zen_data/drift_schemas packages/zen_data/test/generated_migrations'
+          dirty="$(git status --porcelain -- $generated)"
+          if [ -n "$dirty" ]; then
+            echo "$dirty"
+            echo "::error::Generated Drift output is stale or unstaged. Run 'dart run build_runner build' in packages/zen_data and commit the result."
+            exit 1
+          fi
+
       # §11.10 step 1: analyze across all four packages, warnings as errors.
       - name: Analyze
         run: |

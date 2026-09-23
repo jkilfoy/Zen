@@ -349,4 +349,118 @@ void main() {
       expect(anIdea().isActive, isTrue);
     });
   });
+
+  group('INV-8: the sourceIdea fields are both null or both set', () {
+    test('a Task converted from an Idea carries both', () {
+      expect(
+        aTask(
+          sourceIdeaId: 'idea-1',
+          sourceIdeaCreatedAt: base,
+        ).invariantFailures,
+        isEmpty,
+      );
+    });
+
+    test('a Task that was never converted carries neither', () {
+      expect(aTask().invariantFailures, isEmpty);
+    });
+
+    test('an id without a creation time is refused', () {
+      expect(() => aTask(sourceIdeaId: 'idea-1'), _refusedBy('INV-8'));
+    });
+
+    test('a creation time without an id is refused', () {
+      expect(() => aTask(sourceIdeaCreatedAt: base), _refusedBy('INV-8'));
+    });
+  });
+
+  group('INV-9: every timestamp has exactly millisecond precision', () {
+    final DateTime coarse = DateTime.utc(2026, 9, 22, 12, 0, 0, 250);
+    final DateTime fine = DateTime.utc(2026, 9, 22, 12, 0, 0, 250, 1);
+
+    test('millisecond instants are well-formed', () {
+      expect(
+        aTask(createdAt: coarse, updatedAt: coarse).invariantFailures,
+        isEmpty,
+      );
+      expect(
+        anIdea(createdAt: coarse, updatedAt: coarse).invariantFailures,
+        isEmpty,
+      );
+      expect(
+        aSubtask(createdAt: coarse, updatedAt: coarse).invariantFailures,
+        isEmpty,
+      );
+    });
+
+    test('a microsecond component is refused, for tasks', () {
+      expect(
+        () => aTask(createdAt: fine, updatedAt: fine),
+        _refusedBy('INV-9: createdAt'),
+      );
+    });
+
+    test('a microsecond component is refused, for ideas', () {
+      expect(
+        () => anIdea(createdAt: coarse, updatedAt: fine),
+        _refusedBy('INV-9: updatedAt'),
+      );
+    });
+
+    test('a microsecond component is refused, for subtasks', () {
+      expect(
+        () => Subtask(
+          id: 's',
+          name: subtaskName('A subtask'),
+          status: TaskStatus.done,
+          createdAt: coarse,
+          updatedAt: coarse,
+          completedAt: fine,
+        ),
+        _refusedBy('INV-9: completedAt'),
+      );
+    });
+
+    test('a nullable timestamp that is absent passes', () {
+      final Task task = aTask(createdAt: coarse, updatedAt: coarse);
+      expect(task.completedAt, isNull);
+      expect(task.invariantFailures, isEmpty);
+    });
+
+    test('§3: truncateToMilliseconds is what makes an instant conform', () {
+      expect(hasMillisecondPrecision(fine), isFalse);
+      expect(truncateToMilliseconds(fine), coarse);
+      expect(hasMillisecondPrecision(truncateToMilliseconds(fine)), isTrue);
+    });
+
+    test('§3: truncation never moves an instant forwards', () {
+      final DateTime justUnder = DateTime.utc(2026, 9, 22, 12, 0, 0, 250, 999);
+      expect(truncateToMilliseconds(justUnder), coarse);
+      expect(truncateToMilliseconds(justUnder).isAfter(justUnder), isFalse);
+    });
+
+    test('§3: truncation returns UTC whatever it is given', () {
+      expect(truncateToMilliseconds(DateTime(2026, 9, 22, 12)).isUtc, isTrue);
+    });
+
+    test('§3, INV-9: a conforming instant is 24 ISO-8601 characters', () {
+      final String iso = truncateToMilliseconds(fine).toIso8601String();
+      expect(iso, '2026-09-22T12:00:00.250Z');
+      expect(iso.length, 24, reason: 'what §11.5.2 CHECKs on the way to disk');
+    });
+  });
 }
+
+/// Matches the [AssertionError] an entity constructor throws, requiring its
+/// message to name [invariant].
+///
+/// The existing groups assert only that *an* assertion fired; naming the
+/// invariant means a test that starts passing for the wrong reason — some other
+/// invariant breaking first — reports itself.
+Matcher _refusedBy(String invariant) => throwsA(
+  isA<AssertionError>().having(
+    (AssertionError e) => e.message.toString(),
+    'message',
+    contains(invariant),
+  ),
+);

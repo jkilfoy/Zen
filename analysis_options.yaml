@@ -12,6 +12,9 @@ analyzer:
   exclude:
     - "**/*.g.dart"
     - "**/*.freezed.dart"
+    # Drift's `schema generate` output (§11.5.3). Generated like *.g.dart but
+    # not named like it, and committed for the same reason (D-M0-12).
+    - "**/generated_migrations/**"
     - "build/**"
   errors:
     # Generated Drift code is excluded above; anything else that the analyzer

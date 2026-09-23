@@ -52,9 +52,26 @@ which is what §11.1's wording ("its `pubspec.yaml` MUST NOT depend on") covers.
 |---|---|---|
 | Lints for `zen_data`, `zen_app` | `flutter_lints` | `^6.0.0` |
 
-Drift, Riverpod, `go_router`, `shelf`, `nsd`, `saf_util` and the rest of §11.2
-are resolved at the milestone that first needs them (M3, M4, M6, M7) and
-recorded here then, per §11.2.
+### `zen_data` (M3)
+
+Resolved by `flutter pub get` on 2026-09-23 and taken from `pubspec.lock`.
+
+| Role | Package | Constraint | **Resolved** | Notes |
+|---|---|---|---|---|
+| Database | `drift` | `^2.35.0` | **2.35.0** | §11.2's claim holds: since 2.32 SQLite is bundled through a build hook, and `NativeDatabase.memory()` works under `flutter test` on Windows with nothing extra installed (sqlite3 **3.53.4**). |
+| Database (Flutter glue) | `drift_flutter` | `^0.3.1` | **0.3.1** | For M4's composition root; M3 opens its own connection (`connection.dart`). |
+| Codegen | `drift_dev` | `^2.35.0` | **2.35.0** | Also supplies `schema dump` / `generate` / `steps` (§11.5.3) and `package:drift_dev/api/migrations_native.dart`. |
+| Codegen driver | `build_runner` | `^2.16.1` | **2.16.1** | **`--delete-conflicting-outputs` was removed in 2.16** and now warns; `dart run build_runner build` is the whole command. |
+| SQLite | `sqlite3` | `^3.6.0` | **3.6.0** | A direct runtime dependency, not only a test one: §11.5.2's error mapping reads `SqliteException.extendedResultCode`. |
+| IANA time zones | `timezone` | `^0.11.1` | **0.11.1** | `zen_data` only (§11.2, D-M1-2). `TimeZone.offset` is already a `Duration`, and the bundled database is Dart source, so the adapter reads no files. |
+| Lints | `flutter_lints` | `^6.0.0` | **6.0.0** | |
+
+`sqlite3_flutter_libs` is now published as **`0.6.0+eol`** — end of life, exactly
+as §11.2 predicted. Nothing here depends on it.
+
+Riverpod, `go_router`, `shelf`, `nsd`, `saf_util` and the rest of §11.2 are
+resolved at the milestone that first needs them (M4, M6, M7) and recorded here
+then, per §11.2.
 
 ---
 
@@ -318,6 +335,162 @@ reads as §9.3's numbered steps. No behaviour changed.
 interleaved with sync points, which means the orchestrator. It belongs to M6 and
 is noted there, not skipped.
 
+## M3 — `zen_data`
+
+Eleven ambiguities in §11.5 and §3.7 were found before any code was written and
+put to the owner; all eleven were accepted and folded into **`ZEN_SPEC.md`
+v1.5**, so they are specification, not decisions, and are not repeated here.
+What follows is what v1.5 still leaves to the implementer.
+
+**D-M3-1 — The schema is declared in SQL (`.drift` files), not in Dart's table DSL.**
+§11.5.2 presents its constraints as SQL, and this schema is unusually
+constraint-heavy: thirty-odd named `CHECK`s, two partial unique indexes and
+seven triggers. Dart's `customConstraints` turned out to be the worse option on
+both counts that matter. `drift_dev` reports *"Drift can only verify custom
+constraints set as constant string literals"*, so a constraint built from a
+helper is passed through unvalidated — and even a literal one is only checked,
+never read back. In a `.drift` file every statement is parsed and validated at
+build time, the `CREATE TABLE` reads as §11.5.2 writes it, and the triggers and
+indexes sit beside the table they defend. The cost is that table classes are
+named after their tables, which collides with `zen_domain`'s `Settings`;
+`AS IdeaRow`, `AS TaskRow` and so on keep the row classes clear of the entities,
+and the one remaining clash is hidden at its two import sites.
+
+**D-M3-2 — Tables are `STRICT`.**
+Not required by the specification. SQLite's default typing would accept an
+integer in `name` or a blob in `status`, and this is the layer §11.5.2 calls the
+only enforcement that executes in a release build, so the extra rigour is worth
+the two lines it costs. Verified by a test: `cannot store TEXT value in INTEGER
+column tasks.is_archived`.
+
+**D-M3-3 — Timestamps are `TEXT` columns encoded by the mapper, and
+`store_date_time_values_as_text` is set anyway.**
+These pull in opposite directions and both are deliberate. `STRICT` permits only
+`INT`, `INTEGER`, `REAL`, `TEXT`, `BLOB` and `ANY`, so a `DATETIME` column —
+which is how drift's own `DateTime` mapping is declared — is not available. The
+mapper therefore encodes and decodes instants itself, in `mapping/instants.dart`,
+which is where §3's truncation at the storage boundary belongs in any case. The
+build option stays set because it costs nothing and because a `DATETIME` column
+added later, by someone who has not read this entry, would otherwise silently
+store Unix seconds — the defect that prompted v1.5.
+
+**D-M3-4 — Enums are stored by name, never by index.**
+`TaskStatus` is declared in *merge-precedence* order (§9.3 step 4) and
+`Timeframe` in urgency order, so both indices are chosen for the algorithm
+rather than for storage, and storing an index would let a later reordering
+rewrite every row's meaning in silence. The names are also what §11.5.2's SQL
+compares against (`status = 'done'`), and a `CHECK … IN (…)` on each column
+keeps the vocabulary closed.
+
+**D-M3-5 — The repositories do not pre-check NAME-6; the UI still does.**
+§11.5.2 settles this ("Violations are detected by attempting the write"), and
+M3's definition of done makes it testable: AC-8, AC-9 and AC-10 must exercise
+the partial index rather than an application check. So the repositories attempt
+the write and translate the failure, and `findActiveByNormalizedName` and
+`activeNormalizedNames` exist for the UI's live feedback (NAME-8) and its
+`"Open it"` link. The index cannot tell NAME-8 from NAME-9 — both are the same
+collision on the same index — so the caller names which violation it is:
+`TaskNameCollision` when saving, `ActiveTaskHoldsName` when restoring or
+unarchiving. The mapping keys on SQLite's numeric extended result codes (2067,
+1555, 275, 1811, 787), never on message text, which varies between builds.
+
+**D-M3-6 — The repositories append to the event log inside their own transactions.**
+§11.4.6 declares `EventLog` beside the other repositories and never says who
+writes to it. HIST-2's log is only trustworthy if an entry commits with the
+change it records: written afterwards, it loses exactly the entries that would
+explain a crash. STORE-3 already requires these operations to be atomic, so the
+entry joins a transaction that is there anyway. `EventRecorder` derives what to
+write by comparing the record before and after, so a save that changed a name
+and a tag produces `renamed` and `tagsChanged` rather than one vague entry, and
+a save that changed nothing produces none.
+
+**D-M3-7 — `TaskRepository.update` deletes the Task's rows and re-inserts them.**
+The INV-2 triggers make an in-place update order-dependent with no correct
+answer. Writing the task row first fails when a Task becomes `Done` while its
+old subtask rows are still open; writing the subtasks first fails when a `Done`
+Task is reopened, because the new open subtasks land under a parent that is
+still `Done`. Removing the old rows first leaves neither trigger anything to
+object to. It is the same argument §11.6.5 makes for applying a merge, and it is
+safe here because `update` rewrites every one of that Task's rows regardless;
+the subtask and tag rows follow through `ON DELETE CASCADE`.
+
+**D-M3-8 — A rule's refusal rolls the transaction back rather than committing it.**
+Returning an `Err` from inside `transaction` would commit it. Nothing has been
+written at that point, but rolling back is the honest outcome and it keeps the
+refusal and the constraint translation on one path, so `_RuleRefused` carries
+the violation out and it is converted back at the boundary.
+
+**D-M3-9 — `tools/verify.ps1` and `ci.yaml` regenerate the Drift output and fail
+if it is stale.**
+D-M0-12 commits `*.g.dart` on purpose, which makes "committed but not
+regenerated" a real failure mode that otherwise surfaces late and confusingly.
+Both now run `dart run build_runner build` in `zen_data` and then require
+`git status --porcelain` to be empty over the four generated paths —
+`git status` rather than `git diff`, so output that was never added at all is
+caught too, and scoped to those paths so work in progress elsewhere is not
+mistaken for it. The build runs before `dart format`, because the analyzer
+excludes generated output and the formatter cannot.
+
+**D-M3-10 — Drift's `schema generate` output is excluded from analysis.**
+`test/generated_migrations/` is generated exactly like `*.g.dart` and committed
+for the same reason (§11.5.3, D-M0-12), but is not named like it, so the root
+`analysis_options.yaml` excludes `**/generated_migrations/**`. Without it,
+strict-raw-types reports nine warnings in a file nobody writes.
+
+**D-M3-11 — Opening the database returns a value, and a corrupt file is
+quarantined rather than replaced.**
+§11.5.5 forbids both crashing to a blank screen and silently creating an empty
+database over the top. `openDatabase` therefore returns `DatabaseOpened` or
+`DatabaseUnreadable` rather than throwing, runs `PRAGMA integrity_check` before
+handing the database back, and renames an unreadable file to
+`<path>.unreadable-<instant>` so nothing is destroyed. The instant is a
+parameter, not a clock reading (§11.11). The recovery screen itself is M4's.
+
+**D-M3-12 — Settings are a key-value table, and a malformed value falls back to
+its factory default.**
+§11.5.1 asks for key-value; the encoding is one string per key, with the
+expanded-group set as comma-separated `Timeframe` names — the empty string being
+the legitimate "all collapsed". §11.5.5 says a failure must not present as data
+loss and §3.6 gives every key a default, so an unparseable value reads as that
+default rather than crashing the app. An unrecognised group name is dropped from
+the set instead of failing the whole set: losing one group's expansion state is
+a smaller harm than resetting all four.
+
+**D-M3-13 — INV-6's length limits are a sound superset, and one thing is not
+enforceable at all.**
+NAME-2 and NAME-3 count Unicode extended grapheme clusters; SQLite's `length()`
+counts UTF-16 code units, so §11.5.2's "generous ceiling" is 16,000 code units
+for a name — sixteen per cluster, far beyond anything real, so the bound can
+never reject a name `ItemName.parse` accepts. What SQL *can* state exactly is
+enforced: non-empty, trimmed (NAME-1), free of line breaks (NAME-4), and for
+tags free of whitespace and of a leading `@` (TAG-1, TAG-2). Separately, nothing
+in SQL can assert `name_normalized = normalizeName(name)`; the mitigation
+§11.5.2 names is implemented as one mapper plus a test that drives every write
+path — create, update, convert, soft delete, restore, unarchive and the archive
+sweep — and re-derives the normalization for every row. That test includes a
+hand-written stale row, so it fails if it is ever weakened into a tautology.
+
+**D-M3-14 — `ArchiveSweeper` does the arithmetic; scheduling the timer is M4's.**
+§11.5.4 wants the sweep at app start, on foreground, and on a timer at the next
+boundary. The first two are `sweep()` and the third needs `nextBoundaryAfter`,
+both of which are here; the timer itself needs the app lifecycle and belongs
+with the composition root.
+
+**D-M3-15 — `ReplicaRepository` seeds its row on first read, with an injected
+device name.**
+§11.5.1 says the replica id is "generated on first launch", and the device name
+comes from the platform, which only `zen_app` can ask (`device_info_plus`, M4).
+So the row is created on first read from an injected `IdGenerator` and a default
+name, and `setDeviceName` exists for the pairing screen (§11.6.4).
+
+**D-M3-16 — §11.5.1's first line still lists the old tag tables.**
+Reported rather than fixed silently. Line 812 of `ZEN_SPEC.md` v1.5 still reads
+"`ideas`, `tasks`, `subtasks`, `tags`, `item_tags`, …", which the bullet three
+lines below it replaces with `idea_tags` and `task_tags`. The bullet is the one
+v1.5 rewrote and is what the schema implements; the list is an editorial
+leftover. `schema_test.dart` asserts that neither `tags` nor `item_tags` exists,
+so a future reader who follows the stale line will be told.
+
 ## Verification status (§11.13.1)
 
 §11.13.1 requires that no milestone be reported done on the strength of code
@@ -325,6 +498,7 @@ that has never run.
 
 | Milestone | Verified | How |
 |---|---|---|
+| M3 | **Yes** | 182 tests green under `flutter test` in `zen_data`, plus 313 in `zen_domain` (16 new there, for EOD-2A, INV-8 and INV-9). Sixty-seven of the 182 are constraint tests written in raw SQL with the repositories bypassed: every `CHECK`, both partial unique indexes, all seven triggers, the foreign keys and the cascades are attacked and required to fail, and each assertion names the constraint that fired, so a test cannot pass because some other constraint objected first. AC-6, AC-8, AC-9 and AC-10 pass against a real in-memory database, with AC-8/9/10 reaching the partial index rather than an application check. The §11.5.3 harness is in place: `drift_schemas/drift_schema_v1.json` is committed and a test verifies the live schema against it. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean. §11.13.1 puts all of M3 in the left-hand column and that held — Drift ran headlessly throughout and nothing here needs real hardware. |
 | M2 | **Yes** | 297 tests green under `dart test` (223 before M2, so 74 new), covering AC-13 through AC-19, every step and every field rule of §9.3, and the four property tests of §11.12 item 2 — order-independence, idempotence, invariant preservation against `datasetInvariantFailures`, and no resurrection — each over 300 seeds with the seed in every failure message. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean, and `zen_domain` still declares no dependency that touches IO. Pure Dart, so §11.13.1 puts this entirely in the left-hand column: there is nothing here that needs real hardware. |
 | M1 | **Yes** | 223 tests green under `dart test`, covering every rule in §4, every invariant in §3.7, the validation in §3.1 and §3.5, the EoD calculator at exact boundary instants including both DST transitions, and AC-1, AC-2, AC-3 and AC-7 as pure domain tests. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean, and `zen_domain` still declares no dependency that touches IO (`test/architecture_test.dart`). |
 | M0 | **Yes** | Flutter 3.47.5 / Dart 3.13.4 installed to `C:\src\flutter` on 2026-09-22 (archive SHA-256 checked against the release manifest). Every step of §11.10 run locally and green: `pub get` in all four packages, `dart analyze --fatal-infos --fatal-warnings` × 4 with no issues, `dart format --set-exit-if-changed`, `tools/check_no_datetime_now.sh`, `dart test` × 2, `flutter test` × 2. **Not yet observed on the GitHub Actions runner** — the workflow has never executed, since the repository has no remote. See the open item below. |

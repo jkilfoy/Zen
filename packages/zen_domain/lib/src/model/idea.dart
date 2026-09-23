@@ -4,6 +4,7 @@ library;
 import 'package:collection/collection.dart';
 import 'package:meta/meta.dart';
 
+import '../time/instant_precision.dart';
 import 'enums.dart';
 import 'item_name.dart';
 import 'item_text.dart';
@@ -66,12 +67,17 @@ final class Idea {
 
   /// §3.7. The invariants this Idea breaks, empty when it is well-formed.
   ///
-  /// Only INV-5 applies per entity: an Idea has no status or lifecycle flags.
+  /// Only INV-5 and INV-9 apply per entity: an Idea has no status or lifecycle
+  /// flags.
   /// INV-6 (uniqueness) and INV-7 (tombstones) span the dataset and live in
   /// `invariants.dart`.
   List<String> get invariantFailures => <String>[
     if (createdAt.isAfter(updatedAt))
       'INV-5: createdAt $createdAt is after updatedAt $updatedAt',
+    ...timestampPrecisionFailures(<String, DateTime?>{
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+    }),
   ];
 
   /// Returns a copy with the given fields replaced.

@@ -1,0 +1,61 @@
+import 'ideas.drift';
+import 'tasks.drift';
+
+-- §3.5, §11.5.1. Tags live in two per-kind tables rather than in a shared
+-- vocabulary plus a polymorphic link table.
+--
+-- TAG-4's rule — "Tags keep the case the user typed, but compare
+-- case-insensitively" — is *per Item*, so the value belongs on the attachment.
+-- A shared table keyed on the normalized value would force one global casing,
+-- so an Item that stored `@CS` would read back as `@cs`; keyed on the raw value
+-- it would let `@Work` and `@work` both attach to one Item. Carrying the value
+-- here fixes both, and a per-kind table can hold a real foreign key, so
+-- hard-deleting an Idea (DEL-3) takes its tags with it instead of orphaning
+-- them into TAG-6's autocomplete.
+--
+-- `(owner_id, value_normalized)` as the primary key is what actually enforces
+-- TAG-4; `sort_index` preserves the insertion order §3.2 and §3.3 require, and
+-- is unique so that order is never undefined on a tie.
+CREATE TABLE idea_tags (
+  owner_id TEXT NOT NULL REFERENCES ideas (id) ON DELETE CASCADE,
+  value TEXT NOT NULL,
+  -- `normalizeTag(value)`: NFC then case-folded (TAG-4, D-M1-15).
+  value_normalized TEXT NOT NULL,
+  sort_index INTEGER NOT NULL,
+
+  PRIMARY KEY (owner_id, value_normalized),
+  CONSTRAINT inv6_idea_tags_value CHECK (
+    value <> ''
+    AND instr(value, ' ') = 0 AND instr(value, char(9)) = 0
+    AND instr(value, char(10)) = 0 AND instr(value, char(13)) = 0
+    AND value NOT LIKE '@%'
+    AND length(value) <= 512
+  ),
+  CONSTRAINT inv6_idea_tags_value_normalized CHECK (value_normalized <> ''),
+  CONSTRAINT sort_index_idea_tags CHECK (sort_index >= 0),
+  CONSTRAINT unique_idea_tags_order UNIQUE (owner_id, sort_index)
+) STRICT AS IdeaTagRow;
+
+CREATE TABLE task_tags (
+  owner_id TEXT NOT NULL REFERENCES tasks (id) ON DELETE CASCADE,
+  value TEXT NOT NULL,
+  value_normalized TEXT NOT NULL,
+  sort_index INTEGER NOT NULL,
+
+  PRIMARY KEY (owner_id, value_normalized),
+  CONSTRAINT inv6_task_tags_value CHECK (
+    value <> ''
+    AND instr(value, ' ') = 0 AND instr(value, char(9)) = 0
+    AND instr(value, char(10)) = 0 AND instr(value, char(13)) = 0
+    AND value NOT LIKE '@%'
+    AND length(value) <= 512
+  ),
+  CONSTRAINT inv6_task_tags_value_normalized CHECK (value_normalized <> ''),
+  CONSTRAINT sort_index_task_tags CHECK (sort_index >= 0),
+  CONSTRAINT unique_task_tags_order UNIQUE (owner_id, sort_index)
+) STRICT AS TaskTagRow;
+
+-- TAG-6. Autocomplete draws from every tag on any active Item, which is then a
+-- UNION of two indexed queries.
+CREATE INDEX idx_idea_tags_normalized ON idea_tags (value_normalized);
+CREATE INDEX idx_task_tags_normalized ON task_tags (value_normalized);

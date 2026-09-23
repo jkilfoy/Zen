@@ -109,10 +109,11 @@ Not yet. The Flutter UI arrives in M4; `packages/zen_app` currently holds only
 its pubspec and a placeholder library, and its `android/` and `windows/`
 folders are generated at that point (see `DECISIONS.md`, D-M0-6).
 
-What does exist is the whole rules engine, and it runs in about a second:
+What does exist is the whole rules engine and the database beneath it:
 
 ```bash
-cd packages/zen_domain && dart test
+cd packages/zen_domain && dart test    # rules, merge — about a second
+cd packages/zen_data   && flutter test # schema, constraints, repositories
 ```
 
 ## Conventions
@@ -135,9 +136,9 @@ still waiting on real hardware (§11.13.1).
 | Milestone | State |
 |---|---|
 | M0 — repository skeleton | **done** — every §11.10 step green locally; `ci.yaml` itself unproven until first push |
-| M1 — `zen_domain` model and rules | **done** — 212 tests green |
-| M2 — merge | not started |
-| M3 — `zen_data` | not started |
+| M1 — `zen_domain` model and rules | **done** |
+| M2 — merge | **done** — `NameUnionMergeStrategy` per §9.3, with property tests over many seeds |
+| M3 — `zen_data` | **done** — 313 domain + 182 data tests green; every constraint has a test that attempts the violation |
 | M4 — capture path | not started |
 | M5 — remaining screens | not started |
 | M6 — `zen_sync` core | not started |

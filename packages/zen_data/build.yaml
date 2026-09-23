@@ -1,0 +1,16 @@
+# §11.5.2. Drift's `store_date_time_values_as_text` defaults to `false`, which
+# stores every instant as Unix *seconds* and silently discards the sub-second
+# part. §3 requires ISO-8601 text at exact millisecond precision, both because
+# text compares chronologically only at uniform width (INV-9) and because
+# §9.3 step 4 resolves conflicts by latest `updatedAt` — coarser storage
+# manufactures ties between edits that were genuinely ordered, and a tie can
+# revert a rename.
+#
+# This cannot be changed later without rewriting every row, and the precision
+# it would have destroyed is not recoverable.
+targets:
+  $default:
+    builders:
+      drift_dev:
+        options:
+          store_date_time_values_as_text: true

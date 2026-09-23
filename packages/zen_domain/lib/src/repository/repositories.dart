@@ -13,6 +13,7 @@ import '../model/settings.dart';
 import '../model/task.dart';
 import '../model/tombstone.dart';
 import '../result.dart';
+import '../time/local_time.dart';
 
 /// §11.4.6. Storage for Ideas.
 abstract interface class IdeaRepository {
@@ -79,9 +80,20 @@ abstract interface class TaskRepository {
   /// EOD-2, EOD-3, STORE-3. Archives every Task whose boundary has passed, in
   /// one transaction, and returns them.
   ///
+  /// §11.5.4: every time input arrives as an explicit parameter rather than
+  /// being read from a clock or the settings inside the repository. That keeps
+  /// this a pure transactional primitive, keeps §11.11's rule that time is
+  /// passed in rather than hidden, and lets AC-6 be written without a settings
+  /// round-trip. `ArchiveSweeper` is what reads [endOfDay] and [zoneId] and
+  /// calls this.
+  ///
   /// Idempotent, so running it at start, on foreground and at each boundary
   /// costs nothing extra (§11.5.4).
-  Future<List<Task>> runArchiveSweep(DateTime nowUtc);
+  Future<List<Task>> runArchiveSweep({
+    required DateTime nowUtc,
+    required LocalTime endOfDay,
+    required String zoneId,
+  });
 }
 
 /// §11.4.6. Storage for the per-replica settings of §3.6 and §11.8.
@@ -111,6 +123,16 @@ abstract interface class EventLog {
   /// The MVP does not show the log in the UI; this exists for audit and for
   /// future merge strategies (§9.1).
   Future<List<ItemEvent>> forItem(String itemId);
+
+  /// §11.5.1. Applies the log's cap, returning how many entries it removed.
+  ///
+  /// "On each app start, delete entries older than 365 days, keeping at least
+  /// the most recent 5,000 regardless of age." The retention window is counted
+  /// back from [nowUtc]; the floor is **global**, not per item; and both
+  /// numbers are one named constant in the implementation, so the cap can be
+  /// raised in one place if the log ever becomes useful for a better merge
+  /// strategy (§9.1).
+  Future<int> prune(DateTime nowUtc);
 }
 
 /// §11.4.6, §9.3 step 1. Storage for Idea tombstones.

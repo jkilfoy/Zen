@@ -4,6 +4,7 @@ library;
 import 'package:collection/collection.dart';
 import 'package:meta/meta.dart';
 
+import '../time/instant_precision.dart';
 import 'enums.dart';
 import 'item_name.dart';
 import 'item_text.dart';
@@ -123,9 +124,9 @@ final class Task {
 
   /// §3.7. The invariants this Task breaks, empty when it is well-formed.
   ///
-  /// Covers INV-1 through INV-5, including its subtasks' own failures. INV-6
-  /// (uniqueness) and INV-7 (tombstones) span the whole dataset and live in
-  /// `invariants.dart`.
+  /// Covers INV-1 through INV-5 and INV-8, INV-9, including its subtasks' own
+  /// failures. INV-6 (uniqueness) and INV-7 (tombstones) span the whole dataset
+  /// and live in `invariants.dart`.
   List<String> get invariantFailures => <String>[
     if ((status == TaskStatus.done) != (completedAt != null))
       'INV-1: status is $status but completedAt is $completedAt',
@@ -139,6 +140,17 @@ final class Task {
       'INV-4: isDeleted is $isDeleted but deletedAt is $deletedAt',
     if (createdAt.isAfter(updatedAt))
       'INV-5: createdAt $createdAt is after updatedAt $updatedAt',
+    if ((sourceIdeaId == null) != (sourceIdeaCreatedAt == null))
+      'INV-8: sourceIdeaId is $sourceIdeaId but sourceIdeaCreatedAt is '
+          '$sourceIdeaCreatedAt',
+    ...timestampPrecisionFailures(<String, DateTime?>{
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+      'completedAt': completedAt,
+      'archivedAt': archivedAt,
+      'deletedAt': deletedAt,
+      'sourceIdeaCreatedAt': sourceIdeaCreatedAt,
+    }),
     for (final Subtask subtask in subtasks)
       ...subtask.invariantFailures.map(
         (String f) => 'subtask ${subtask.id}: $f',
@@ -156,13 +168,20 @@ final class Task {
     completedAt: target == TaskStatus.done ? now : null,
   );
 
-  /// EOD-2, INV-3, INV-4. Returns this Task archived at [boundary].
+  /// EOD-2, EOD-2A, INV-3, INV-4. Returns this Task archived at [boundary].
   ///
   /// [boundary] is the End-of-Day instant the Task crossed, not the instant the
   /// sweep ran, so a device closed across several boundaries still records the
   /// right one (§11.5.4).
+  ///
+  /// EOD-2A: archiving is a system action, not a user edit, so [updatedAt] does
+  /// **not** move; [archivedAt] is the audit trail. Moving it would let a sweep
+  /// firing after a late edit push [updatedAt] *backwards* to the boundary
+  /// instant, and §9.3 step 4 resolves by latest [updatedAt] — a peer holding
+  /// pre-edit content would then win and the edit would be lost.
+  /// [unarchived] *is* a user action and does move it.
   Task archived(DateTime boundary) =>
-      _copy(isArchived: true, archivedAt: boundary, updatedAt: boundary);
+      _copy(isArchived: true, archivedAt: boundary);
 
   /// ARCH-3. Returns this Task unarchived: back to `Todo`, [completedAt]
   /// cleared, ready to reappear in the To Do list with its subtask statuses

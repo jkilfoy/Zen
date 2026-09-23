@@ -1,0 +1,1291 @@
+{
+  "_meta": {
+    "description": "This file contains a serialized version of schema entities for drift.",
+    "version": "1.3.0"
+  },
+  "options": {
+    "store_date_time_values_as_text": true
+  },
+  "entities": [
+    {
+      "id": 0,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "settings",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "setting_key",
+            "getter_name": "settingKey",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "setting_value",
+            "getter_name": "settingValue",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [],
+        "strict": true
+      }
+    },
+    {
+      "id": 1,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "replica",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "replica_id",
+            "getter_name": "replicaId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "device_name",
+            "getter_name": "deviceName",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CONSTRAINT single_row_replica CHECK(id = 1)",
+          "CONSTRAINT replica_id_present CHECK(replica_id <> '')"
+        ],
+        "strict": true
+      }
+    },
+    {
+      "id": 2,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "events",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "event_id",
+            "getter_name": "eventId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "item_id",
+            "getter_name": "itemId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "item_kind",
+            "getter_name": "itemKind",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "type",
+            "getter_name": "type",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "timestamp",
+            "getter_name": "timestamp",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "payload",
+            "getter_name": "payload",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT '{}'",
+            "default_dart": "const CustomExpression('\\'{}\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CONSTRAINT inv9_events_timestamp CHECK(length(timestamp) = 24 AND timestamp LIKE '%Z')",
+          "CONSTRAINT item_kind_events CHECK(item_kind IN ('idea', 'task'))"
+        ],
+        "strict": true
+      }
+    },
+    {
+      "id": 3,
+      "references": [
+        2
+      ],
+      "type": "index",
+      "data": {
+        "on": 2,
+        "name": "idx_events_item",
+        "sql": "CREATE INDEX idx_events_item ON events (item_id, timestamp);",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 4,
+      "references": [
+        2
+      ],
+      "type": "index",
+      "data": {
+        "on": 2,
+        "name": "idx_events_timestamp",
+        "sql": "CREATE INDEX idx_events_timestamp ON events (timestamp);",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 5,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "idea_tombstones",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "deleted_at",
+            "getter_name": "deletedAt",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "reason",
+            "getter_name": "reason",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CONSTRAINT inv9_idea_tombstones_deleted_at CHECK(length(deleted_at) = 24 AND deleted_at LIKE '%Z')",
+          "CONSTRAINT reason_idea_tombstones CHECK(reason IN ('deleted', 'converted'))"
+        ],
+        "strict": true
+      }
+    },
+    {
+      "id": 6,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "ideas",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "name",
+            "getter_name": "name",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "name_normalized",
+            "getter_name": "nameNormalized",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "context",
+            "getter_name": "context",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT ''",
+            "default_dart": "const CustomExpression('\\'\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "timeframe",
+            "getter_name": "timeframe",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CONSTRAINT inv5_ideas CHECK(created_at <= updated_at)",
+          "CONSTRAINT inv9_ideas_created_at CHECK(length(created_at) = 24 AND created_at LIKE '%Z')",
+          "CONSTRAINT inv9_ideas_updated_at CHECK(length(updated_at) = 24 AND updated_at LIKE '%Z')",
+          "CONSTRAINT inv6_ideas_name CHECK(name <> '' AND name = trim(name) AND instr(name, char(10)) = 0 AND instr(name, char(13)) = 0 AND length(name) <= 16000)",
+          "CONSTRAINT inv6_ideas_name_normalized CHECK(name_normalized <> '')",
+          "CONSTRAINT inv6_ideas_context CHECK(length(context) <= 160000)",
+          "CONSTRAINT timeframe_ideas CHECK(timeframe IN ('now', 'soon', 'later', 'distant'))"
+        ],
+        "strict": true
+      }
+    },
+    {
+      "id": 7,
+      "references": [
+        6
+      ],
+      "type": "table",
+      "data": {
+        "name": "idea_tags",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "owner_id",
+            "getter_name": "ownerId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL REFERENCES ideas(id)ON DELETE CASCADE",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "ideas",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": "cascade"
+                }
+              }
+            ]
+          },
+          {
+            "name": "value",
+            "getter_name": "value",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "value_normalized",
+            "getter_name": "valueNormalized",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "sort_index",
+            "getter_name": "sortIndex",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "PRIMARY KEY(owner_id, value_normalized)",
+          "CONSTRAINT inv6_idea_tags_value CHECK(value <> '' AND instr(value, ' ') = 0 AND instr(value, char(9)) = 0 AND instr(value, char(10)) = 0 AND instr(value, char(13)) = 0 AND value NOT LIKE '@%' AND length(value) <= 512)",
+          "CONSTRAINT inv6_idea_tags_value_normalized CHECK(value_normalized <> '')",
+          "CONSTRAINT sort_index_idea_tags CHECK(sort_index >= 0)",
+          "CONSTRAINT unique_idea_tags_order UNIQUE(owner_id, sort_index)"
+        ],
+        "strict": true,
+        "explicit_pk": [
+          "owner_id",
+          "value_normalized"
+        ],
+        "unique_keys": [
+          [
+            "owner_id",
+            "sort_index"
+          ]
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "tasks",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "name",
+            "getter_name": "name",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "name_normalized",
+            "getter_name": "nameNormalized",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "description",
+            "getter_name": "description",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT ''",
+            "default_dart": "const CustomExpression('\\'\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "status",
+            "getter_name": "status",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "completed_at",
+            "getter_name": "completedAt",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "is_archived",
+            "getter_name": "isArchived",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT 0",
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "archived_at",
+            "getter_name": "archivedAt",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "is_deleted",
+            "getter_name": "isDeleted",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT 0",
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "deleted_at",
+            "getter_name": "deletedAt",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "source_idea_id",
+            "getter_name": "sourceIdeaId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "source_idea_created_at",
+            "getter_name": "sourceIdeaCreatedAt",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CONSTRAINT inv1_tasks CHECK((status = 'done')=(completed_at IS NOT NULL))",
+          "CONSTRAINT inv3_tasks CHECK(is_archived = 0 OR status = 'done')",
+          "CONSTRAINT inv4_tasks_archived CHECK((is_archived = 1)=(archived_at IS NOT NULL))",
+          "CONSTRAINT inv4_tasks_deleted CHECK((is_deleted = 1)=(deleted_at IS NOT NULL))",
+          "CONSTRAINT inv5_tasks CHECK(created_at <= updated_at)",
+          "CONSTRAINT inv8_tasks CHECK((source_idea_id IS NULL)=(source_idea_created_at IS NULL))",
+          "CONSTRAINT inv9_tasks_created_at CHECK(length(created_at) = 24 AND created_at LIKE '%Z')",
+          "CONSTRAINT inv9_tasks_updated_at CHECK(length(updated_at) = 24 AND updated_at LIKE '%Z')",
+          "CONSTRAINT inv9_tasks_completed_at CHECK(completed_at IS NULL OR(length(completed_at) = 24 AND completed_at LIKE '%Z'))",
+          "CONSTRAINT inv9_tasks_archived_at CHECK(archived_at IS NULL OR(length(archived_at) = 24 AND archived_at LIKE '%Z'))",
+          "CONSTRAINT inv9_tasks_deleted_at CHECK(deleted_at IS NULL OR(length(deleted_at) = 24 AND deleted_at LIKE '%Z'))",
+          "CONSTRAINT inv9_tasks_source_idea_created_at CHECK(source_idea_created_at IS NULL OR(length(source_idea_created_at) = 24 AND source_idea_created_at LIKE '%Z'))",
+          "CONSTRAINT inv6_tasks_name CHECK(name <> '' AND name = trim(name) AND instr(name, char(10)) = 0 AND instr(name, char(13)) = 0 AND length(name) <= 16000)",
+          "CONSTRAINT inv6_tasks_name_normalized CHECK(name_normalized <> '')",
+          "CONSTRAINT inv6_tasks_description CHECK(length(description) <= 160000)",
+          "CONSTRAINT status_tasks CHECK(status IN ('todo', 'blocked', 'done'))",
+          "CONSTRAINT bool_tasks_is_archived CHECK(is_archived IN (0, 1))",
+          "CONSTRAINT bool_tasks_is_deleted CHECK(is_deleted IN (0, 1))"
+        ],
+        "strict": true
+      }
+    },
+    {
+      "id": 9,
+      "references": [
+        8
+      ],
+      "type": "table",
+      "data": {
+        "name": "task_tags",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "owner_id",
+            "getter_name": "ownerId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL REFERENCES tasks(id)ON DELETE CASCADE",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "tasks",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": "cascade"
+                }
+              }
+            ]
+          },
+          {
+            "name": "value",
+            "getter_name": "value",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "value_normalized",
+            "getter_name": "valueNormalized",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "sort_index",
+            "getter_name": "sortIndex",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "PRIMARY KEY(owner_id, value_normalized)",
+          "CONSTRAINT inv6_task_tags_value CHECK(value <> '' AND instr(value, ' ') = 0 AND instr(value, char(9)) = 0 AND instr(value, char(10)) = 0 AND instr(value, char(13)) = 0 AND value NOT LIKE '@%' AND length(value) <= 512)",
+          "CONSTRAINT inv6_task_tags_value_normalized CHECK(value_normalized <> '')",
+          "CONSTRAINT sort_index_task_tags CHECK(sort_index >= 0)",
+          "CONSTRAINT unique_task_tags_order UNIQUE(owner_id, sort_index)"
+        ],
+        "strict": true,
+        "explicit_pk": [
+          "owner_id",
+          "value_normalized"
+        ],
+        "unique_keys": [
+          [
+            "owner_id",
+            "sort_index"
+          ]
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "references": [
+        7
+      ],
+      "type": "index",
+      "data": {
+        "on": 7,
+        "name": "idx_idea_tags_normalized",
+        "sql": "CREATE INDEX idx_idea_tags_normalized ON idea_tags (value_normalized);",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 11,
+      "references": [
+        9
+      ],
+      "type": "index",
+      "data": {
+        "on": 9,
+        "name": "idx_task_tags_normalized",
+        "sql": "CREATE INDEX idx_task_tags_normalized ON task_tags (value_normalized);",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 12,
+      "references": [
+        8
+      ],
+      "type": "index",
+      "data": {
+        "on": 8,
+        "name": "idx_tasks_active_name",
+        "sql": "CREATE UNIQUE INDEX idx_tasks_active_name ON tasks (name_normalized)\n  WHERE is_deleted = 0 AND is_archived = 0;",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 13,
+      "references": [
+        8
+      ],
+      "type": "index",
+      "data": {
+        "on": 8,
+        "name": "idx_tasks_active",
+        "sql": "CREATE INDEX idx_tasks_active ON tasks (is_deleted, is_archived, created_at);",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 14,
+      "references": [
+        8
+      ],
+      "type": "index",
+      "data": {
+        "on": 8,
+        "name": "idx_tasks_completed_at",
+        "sql": "CREATE INDEX idx_tasks_completed_at ON tasks (completed_at);",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 15,
+      "references": [
+        8
+      ],
+      "type": "table",
+      "data": {
+        "name": "subtasks",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "task_id",
+            "getter_name": "taskId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL REFERENCES tasks(id)ON DELETE CASCADE",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "tasks",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": "cascade"
+                }
+              }
+            ]
+          },
+          {
+            "name": "name",
+            "getter_name": "name",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "status",
+            "getter_name": "status",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "sort_index",
+            "getter_name": "sortIndex",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "completed_at",
+            "getter_name": "completedAt",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "CONSTRAINT inv1_subtasks CHECK((status = 'done')=(completed_at IS NOT NULL))",
+          "CONSTRAINT inv5_subtasks CHECK(created_at <= updated_at)",
+          "CONSTRAINT inv9_subtasks_created_at CHECK(length(created_at) = 24 AND created_at LIKE '%Z')",
+          "CONSTRAINT inv9_subtasks_updated_at CHECK(length(updated_at) = 24 AND updated_at LIKE '%Z')",
+          "CONSTRAINT inv9_subtasks_completed_at CHECK(completed_at IS NULL OR(length(completed_at) = 24 AND completed_at LIKE '%Z'))",
+          "CONSTRAINT inv6_subtasks_name CHECK(name <> '' AND name = trim(name) AND instr(name, char(10)) = 0 AND instr(name, char(13)) = 0 AND length(name) <= 16000)",
+          "CONSTRAINT status_subtasks CHECK(status IN ('todo', 'blocked', 'done'))",
+          "CONSTRAINT sort_index_subtasks CHECK(sort_index >= 0)",
+          "CONSTRAINT unique_subtasks_order UNIQUE(task_id, sort_index)"
+        ],
+        "strict": true,
+        "unique_keys": [
+          [
+            "task_id",
+            "sort_index"
+          ]
+        ]
+      }
+    },
+    {
+      "id": 16,
+      "references": [
+        15
+      ],
+      "type": "index",
+      "data": {
+        "on": 15,
+        "name": "idx_subtasks_task",
+        "sql": "CREATE INDEX idx_subtasks_task ON subtasks (task_id, sort_index);",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 17,
+      "references": [
+        15,
+        8
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 15,
+        "references_in_body": [
+          15,
+          8
+        ],
+        "name": "inv2_subtask_insert",
+        "sql": "CREATE TRIGGER inv2_subtask_insert BEFORE INSERT ON subtasks\nWHEN NEW.status <> 'done'\n  AND (SELECT status FROM tasks WHERE id = NEW.task_id) = 'done'\nBEGIN\n  SELECT RAISE(ABORT, 'INV-2: a Done task cannot gain an open subtask');\nEND;"
+      }
+    },
+    {
+      "id": 18,
+      "references": [
+        15,
+        8
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 15,
+        "references_in_body": [
+          15,
+          8
+        ],
+        "name": "inv2_subtask_update",
+        "sql": "CREATE TRIGGER inv2_subtask_update BEFORE UPDATE ON subtasks\nWHEN NEW.status <> 'done'\n  AND (SELECT status FROM tasks WHERE id = NEW.task_id) = 'done'\nBEGIN\n  SELECT RAISE(ABORT, 'INV-2: a Done task cannot hold an open subtask');\nEND;"
+      }
+    },
+    {
+      "id": 19,
+      "references": [
+        8,
+        15
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 8,
+        "references_in_body": [
+          8,
+          15
+        ],
+        "name": "inv2_task_insert",
+        "sql": "CREATE TRIGGER inv2_task_insert BEFORE INSERT ON tasks\nWHEN NEW.status = 'done'\n  AND EXISTS (\n    SELECT 1 FROM subtasks WHERE task_id = NEW.id AND status <> 'done'\n  )\nBEGIN\n  SELECT RAISE(ABORT, 'INV-2: this task has subtasks that are not Done');\nEND;"
+      }
+    },
+    {
+      "id": 20,
+      "references": [
+        8,
+        15
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 8,
+        "references_in_body": [
+          8,
+          15
+        ],
+        "name": "inv2_task_update",
+        "sql": "CREATE TRIGGER inv2_task_update BEFORE UPDATE ON tasks\nWHEN NEW.status = 'done'\n  AND EXISTS (\n    SELECT 1 FROM subtasks WHERE task_id = NEW.id AND status <> 'done'\n  )\nBEGIN\n  SELECT RAISE(ABORT, 'INV-2: this task has subtasks that are not Done');\nEND;"
+      }
+    },
+    {
+      "id": 21,
+      "references": [
+        6
+      ],
+      "type": "index",
+      "data": {
+        "on": 6,
+        "name": "idx_ideas_active_name",
+        "sql": "CREATE UNIQUE INDEX idx_ideas_active_name ON ideas (name_normalized);",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 22,
+      "references": [
+        6
+      ],
+      "type": "index",
+      "data": {
+        "on": 6,
+        "name": "idx_ideas_created_at",
+        "sql": "CREATE INDEX idx_ideas_created_at ON ideas (created_at);",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 23,
+      "references": [
+        6,
+        5
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 6,
+        "references_in_body": [
+          6,
+          5
+        ],
+        "name": "inv7_idea_insert",
+        "sql": "CREATE TRIGGER inv7_idea_insert BEFORE INSERT ON ideas\nWHEN EXISTS (SELECT 1 FROM idea_tombstones WHERE id = NEW.id)\nBEGIN\n  SELECT RAISE(ABORT, 'INV-7: this Idea id is tombstoned');\nEND;"
+      }
+    },
+    {
+      "id": 24,
+      "references": [
+        6,
+        5
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 6,
+        "references_in_body": [
+          6,
+          5
+        ],
+        "name": "inv7_idea_update",
+        "sql": "CREATE TRIGGER inv7_idea_update BEFORE UPDATE ON ideas\nWHEN EXISTS (SELECT 1 FROM idea_tombstones WHERE id = NEW.id)\nBEGIN\n  SELECT RAISE(ABORT, 'INV-7: this Idea id is tombstoned');\nEND;"
+      }
+    },
+    {
+      "id": 25,
+      "references": [
+        5,
+        6
+      ],
+      "type": "trigger",
+      "data": {
+        "on": 5,
+        "references_in_body": [
+          5,
+          6
+        ],
+        "name": "inv7_tombstone_insert",
+        "sql": "CREATE TRIGGER inv7_tombstone_insert BEFORE INSERT ON idea_tombstones\nWHEN EXISTS (SELECT 1 FROM ideas WHERE id = NEW.id)\nBEGIN\n  SELECT RAISE(ABORT, 'INV-7: this Idea is still present; delete it first');\nEND;"
+      }
+    }
+  ],
+  "fixed_sql": [
+    {
+      "name": "settings",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"settings\" (\"setting_key\" TEXT NOT NULL PRIMARY KEY, \"setting_value\" TEXT NOT NULL) STRICT;"
+        }
+      ]
+    },
+    {
+      "name": "replica",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"replica\" (\"id\" INTEGER NOT NULL PRIMARY KEY, \"replica_id\" TEXT NOT NULL, \"device_name\" TEXT NOT NULL, CONSTRAINT single_row_replica CHECK(id = 1), CONSTRAINT replica_id_present CHECK(replica_id <> '')) STRICT;"
+        }
+      ]
+    },
+    {
+      "name": "events",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"events\" (\"event_id\" TEXT NOT NULL PRIMARY KEY, \"item_id\" TEXT NOT NULL, \"item_kind\" TEXT NOT NULL, \"type\" TEXT NOT NULL, \"timestamp\" TEXT NOT NULL, \"payload\" TEXT NOT NULL DEFAULT '{}', CONSTRAINT inv9_events_timestamp CHECK(length(timestamp) = 24 AND timestamp LIKE '%Z'), CONSTRAINT item_kind_events CHECK(item_kind IN ('idea', 'task'))) STRICT;"
+        }
+      ]
+    },
+    {
+      "name": "idx_events_item",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_events_item ON events (item_id, timestamp)"
+        }
+      ]
+    },
+    {
+      "name": "idx_events_timestamp",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_events_timestamp ON events (timestamp)"
+        }
+      ]
+    },
+    {
+      "name": "idea_tombstones",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"idea_tombstones\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"deleted_at\" TEXT NOT NULL, \"reason\" TEXT NOT NULL, CONSTRAINT inv9_idea_tombstones_deleted_at CHECK(length(deleted_at) = 24 AND deleted_at LIKE '%Z'), CONSTRAINT reason_idea_tombstones CHECK(reason IN ('deleted', 'converted'))) STRICT;"
+        }
+      ]
+    },
+    {
+      "name": "ideas",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"ideas\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"name\" TEXT NOT NULL, \"name_normalized\" TEXT NOT NULL, \"context\" TEXT NOT NULL DEFAULT '', \"timeframe\" TEXT NOT NULL, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, CONSTRAINT inv5_ideas CHECK(created_at <= updated_at), CONSTRAINT inv9_ideas_created_at CHECK(length(created_at) = 24 AND created_at LIKE '%Z'), CONSTRAINT inv9_ideas_updated_at CHECK(length(updated_at) = 24 AND updated_at LIKE '%Z'), CONSTRAINT inv6_ideas_name CHECK(name <> '' AND name = trim(name) AND instr(name, char(10)) = 0 AND instr(name, char(13)) = 0 AND length(name) <= 16000), CONSTRAINT inv6_ideas_name_normalized CHECK(name_normalized <> ''), CONSTRAINT inv6_ideas_context CHECK(length(context) <= 160000), CONSTRAINT timeframe_ideas CHECK(timeframe IN ('now', 'soon', 'later', 'distant'))) STRICT;"
+        }
+      ]
+    },
+    {
+      "name": "idea_tags",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"idea_tags\" (\"owner_id\" TEXT NOT NULL REFERENCES ideas(id)ON DELETE CASCADE, \"value\" TEXT NOT NULL, \"value_normalized\" TEXT NOT NULL, \"sort_index\" INTEGER NOT NULL, PRIMARY KEY(owner_id, value_normalized), CONSTRAINT inv6_idea_tags_value CHECK(value <> '' AND instr(value, ' ') = 0 AND instr(value, char(9)) = 0 AND instr(value, char(10)) = 0 AND instr(value, char(13)) = 0 AND value NOT LIKE '@%' AND length(value) <= 512), CONSTRAINT inv6_idea_tags_value_normalized CHECK(value_normalized <> ''), CONSTRAINT sort_index_idea_tags CHECK(sort_index >= 0), CONSTRAINT unique_idea_tags_order UNIQUE(owner_id, sort_index)) STRICT;"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"tasks\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"name\" TEXT NOT NULL, \"name_normalized\" TEXT NOT NULL, \"description\" TEXT NOT NULL DEFAULT '', \"status\" TEXT NOT NULL, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, \"completed_at\" TEXT NULL, \"is_archived\" INTEGER NOT NULL DEFAULT 0, \"archived_at\" TEXT NULL, \"is_deleted\" INTEGER NOT NULL DEFAULT 0, \"deleted_at\" TEXT NULL, \"source_idea_id\" TEXT NULL, \"source_idea_created_at\" TEXT NULL, CONSTRAINT inv1_tasks CHECK((status = 'done')=(completed_at IS NOT NULL)), CONSTRAINT inv3_tasks CHECK(is_archived = 0 OR status = 'done'), CONSTRAINT inv4_tasks_archived CHECK((is_archived = 1)=(archived_at IS NOT NULL)), CONSTRAINT inv4_tasks_deleted CHECK((is_deleted = 1)=(deleted_at IS NOT NULL)), CONSTRAINT inv5_tasks CHECK(created_at <= updated_at), CONSTRAINT inv8_tasks CHECK((source_idea_id IS NULL)=(source_idea_created_at IS NULL)), CONSTRAINT inv9_tasks_created_at CHECK(length(created_at) = 24 AND created_at LIKE '%Z'), CONSTRAINT inv9_tasks_updated_at CHECK(length(updated_at) = 24 AND updated_at LIKE '%Z'), CONSTRAINT inv9_tasks_completed_at CHECK(completed_at IS NULL OR(length(completed_at) = 24 AND completed_at LIKE '%Z')), CONSTRAINT inv9_tasks_archived_at CHECK(archived_at IS NULL OR(length(archived_at) = 24 AND archived_at LIKE '%Z')), CONSTRAINT inv9_tasks_deleted_at CHECK(deleted_at IS NULL OR(length(deleted_at) = 24 AND deleted_at LIKE '%Z')), CONSTRAINT inv9_tasks_source_idea_created_at CHECK(source_idea_created_at IS NULL OR(length(source_idea_created_at) = 24 AND source_idea_created_at LIKE '%Z')), CONSTRAINT inv6_tasks_name CHECK(name <> '' AND name = trim(name) AND instr(name, char(10)) = 0 AND instr(name, char(13)) = 0 AND length(name) <= 16000), CONSTRAINT inv6_tasks_name_normalized CHECK(name_normalized <> ''), CONSTRAINT inv6_tasks_description CHECK(length(description) <= 160000), CONSTRAINT status_tasks CHECK(status IN ('todo', 'blocked', 'done')), CONSTRAINT bool_tasks_is_archived CHECK(is_archived IN (0, 1)), CONSTRAINT bool_tasks_is_deleted CHECK(is_deleted IN (0, 1))) STRICT;"
+        }
+      ]
+    },
+    {
+      "name": "task_tags",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"task_tags\" (\"owner_id\" TEXT NOT NULL REFERENCES tasks(id)ON DELETE CASCADE, \"value\" TEXT NOT NULL, \"value_normalized\" TEXT NOT NULL, \"sort_index\" INTEGER NOT NULL, PRIMARY KEY(owner_id, value_normalized), CONSTRAINT inv6_task_tags_value CHECK(value <> '' AND instr(value, ' ') = 0 AND instr(value, char(9)) = 0 AND instr(value, char(10)) = 0 AND instr(value, char(13)) = 0 AND value NOT LIKE '@%' AND length(value) <= 512), CONSTRAINT inv6_task_tags_value_normalized CHECK(value_normalized <> ''), CONSTRAINT sort_index_task_tags CHECK(sort_index >= 0), CONSTRAINT unique_task_tags_order UNIQUE(owner_id, sort_index)) STRICT;"
+        }
+      ]
+    },
+    {
+      "name": "idx_idea_tags_normalized",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_idea_tags_normalized ON idea_tags (value_normalized)"
+        }
+      ]
+    },
+    {
+      "name": "idx_task_tags_normalized",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_task_tags_normalized ON task_tags (value_normalized)"
+        }
+      ]
+    },
+    {
+      "name": "idx_tasks_active_name",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE UNIQUE INDEX idx_tasks_active_name ON tasks (name_normalized) WHERE is_deleted = 0 AND is_archived = 0"
+        }
+      ]
+    },
+    {
+      "name": "idx_tasks_active",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_tasks_active ON tasks (is_deleted, is_archived, created_at)"
+        }
+      ]
+    },
+    {
+      "name": "idx_tasks_completed_at",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_tasks_completed_at ON tasks (completed_at)"
+        }
+      ]
+    },
+    {
+      "name": "subtasks",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"subtasks\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"task_id\" TEXT NOT NULL REFERENCES tasks(id)ON DELETE CASCADE, \"name\" TEXT NOT NULL, \"status\" TEXT NOT NULL, \"sort_index\" INTEGER NOT NULL, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, \"completed_at\" TEXT NULL, CONSTRAINT inv1_subtasks CHECK((status = 'done')=(completed_at IS NOT NULL)), CONSTRAINT inv5_subtasks CHECK(created_at <= updated_at), CONSTRAINT inv9_subtasks_created_at CHECK(length(created_at) = 24 AND created_at LIKE '%Z'), CONSTRAINT inv9_subtasks_updated_at CHECK(length(updated_at) = 24 AND updated_at LIKE '%Z'), CONSTRAINT inv9_subtasks_completed_at CHECK(completed_at IS NULL OR(length(completed_at) = 24 AND completed_at LIKE '%Z')), CONSTRAINT inv6_subtasks_name CHECK(name <> '' AND name = trim(name) AND instr(name, char(10)) = 0 AND instr(name, char(13)) = 0 AND length(name) <= 16000), CONSTRAINT status_subtasks CHECK(status IN ('todo', 'blocked', 'done')), CONSTRAINT sort_index_subtasks CHECK(sort_index >= 0), CONSTRAINT unique_subtasks_order UNIQUE(task_id, sort_index)) STRICT;"
+        }
+      ]
+    },
+    {
+      "name": "idx_subtasks_task",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_subtasks_task ON subtasks (task_id, sort_index)"
+        }
+      ]
+    },
+    {
+      "name": "inv2_subtask_insert",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TRIGGER inv2_subtask_insert BEFORE INSERT ON subtasks WHEN NEW.status <> 'done' AND (SELECT status FROM tasks WHERE id = NEW.task_id) = 'done' BEGIN SELECT RAISE (ABORT, 'INV-2: a Done task cannot gain an open subtask');END"
+        }
+      ]
+    },
+    {
+      "name": "inv2_subtask_update",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TRIGGER inv2_subtask_update BEFORE UPDATE ON subtasks WHEN NEW.status <> 'done' AND (SELECT status FROM tasks WHERE id = NEW.task_id) = 'done' BEGIN SELECT RAISE (ABORT, 'INV-2: a Done task cannot hold an open subtask');END"
+        }
+      ]
+    },
+    {
+      "name": "inv2_task_insert",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TRIGGER inv2_task_insert BEFORE INSERT ON tasks WHEN NEW.status = 'done' AND EXISTS (SELECT 1 FROM subtasks WHERE task_id = NEW.id AND status <> 'done') BEGIN SELECT RAISE (ABORT, 'INV-2: this task has subtasks that are not Done');END"
+        }
+      ]
+    },
+    {
+      "name": "inv2_task_update",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TRIGGER inv2_task_update BEFORE UPDATE ON tasks WHEN NEW.status = 'done' AND EXISTS (SELECT 1 FROM subtasks WHERE task_id = NEW.id AND status <> 'done') BEGIN SELECT RAISE (ABORT, 'INV-2: this task has subtasks that are not Done');END"
+        }
+      ]
+    },
+    {
+      "name": "idx_ideas_active_name",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE UNIQUE INDEX idx_ideas_active_name ON ideas (name_normalized)"
+        }
+      ]
+    },
+    {
+      "name": "idx_ideas_created_at",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_ideas_created_at ON ideas (created_at)"
+        }
+      ]
+    },
+    {
+      "name": "inv7_idea_insert",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TRIGGER inv7_idea_insert BEFORE INSERT ON ideas WHEN EXISTS (SELECT 1 FROM idea_tombstones WHERE id = NEW.id) BEGIN SELECT RAISE (ABORT, 'INV-7: this Idea id is tombstoned');END"
+        }
+      ]
+    },
+    {
+      "name": "inv7_idea_update",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TRIGGER inv7_idea_update BEFORE UPDATE ON ideas WHEN EXISTS (SELECT 1 FROM idea_tombstones WHERE id = NEW.id) BEGIN SELECT RAISE (ABORT, 'INV-7: this Idea id is tombstoned');END"
+        }
+      ]
+    },
+    {
+      "name": "inv7_tombstone_insert",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TRIGGER inv7_tombstone_insert BEFORE INSERT ON idea_tombstones WHEN EXISTS (SELECT 1 FROM ideas WHERE id = NEW.id) BEGIN SELECT RAISE (ABORT, 'INV-7: this Idea is still present; delete it first');END"
+        }
+      ]
+    }
+  ]
+}

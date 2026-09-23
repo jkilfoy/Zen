@@ -9,6 +9,7 @@ library;
 
 import '../ids/id_generator.dart';
 import '../time/clock.dart';
+import '../time/instant_precision.dart';
 import '../time/time_zone_rules.dart';
 
 /// §11.4.3. A [Clock] that returns exactly what it is told.
@@ -16,9 +17,13 @@ import '../time/time_zone_rules.dart';
 /// EOD-2 through EOD-5 are specified at exact instants, including two DST
 /// transitions a year, so the tests that cover them must be able to stand the
 /// clock anywhere.
+///
+/// Like every [Clock] it truncates to whole milliseconds (§3, INV-9), so a test
+/// cannot accidentally introduce a precision the database would reject.
 final class FakeClock implements Clock {
   /// Creates a clock reading [now] in [zoneId].
-  FakeClock(DateTime now, {this.zoneId = 'UTC'}) : _now = now.toUtc();
+  FakeClock(DateTime now, {this.zoneId = 'UTC'})
+    : _now = truncateToMilliseconds(now);
 
   DateTime _now;
 
@@ -33,10 +38,11 @@ final class FakeClock implements Clock {
   String localZoneId() => zoneId;
 
   /// Moves the clock to [instant].
-  void set(DateTime instant) => _now = instant.toUtc();
+  void set(DateTime instant) => _now = truncateToMilliseconds(instant);
 
   /// Moves the clock forward by [duration].
-  void advance(Duration duration) => _now = _now.add(duration);
+  void advance(Duration duration) =>
+      _now = truncateToMilliseconds(_now.add(duration));
 }
 
 /// §3. An [IdGenerator] producing predictable, ordered ids.
