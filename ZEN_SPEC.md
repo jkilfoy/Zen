@@ -2,7 +2,9 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.2 |
+| Document version | 1.4 |
+| Changes in 1.4 | Ten findings from the M2 agent's pre-implementation review of §9.3, all accepted. **§9.1 gains MERGE-3A**, distinguishing the set-valued collections (`ideas`, `tasks`, `tombstones`, emitted sorted by `id`) from the genuinely ordered ones (`subtasks`, `tags`). **§9.3 is rewritten**: record order is defined instead of the unusable "sorted by `id`"; tombstones are deduplicated per Idea; **subtask matching is by `id` first and by name-position only as a fall-back**, which fixes a silent data-loss bug where a renamed subtask collapsed two distinct subtasks into one; `archivedAt` and `deletedAt` are conditional on their flags (INV-4); the `sourceIdea` fields resolve as a pair; subtask `completedAt` and list order are specified; and step 6's termination argument is corrected. §9.4 now records that `Done`, `isDeleted` and `isArchived` are all sticky, not just `Done`. |
+| Changes in 1.3 | Pre-M2 review of §9.3, which was ambiguous in two places that decide real behaviour. **Step 4 now defines the primary record**: a component normally holds several records sharing the chosen `id`, and the choice between them decides whether a rename survives a merge or is silently reverted. **Step 5(d)** applies the same rule to subtasks. **Step 6** now groups all colliding Items by name and resolves each group in one pass, because the pairwise wording was order-dependent once three Items collide, breaking MERGE-2. |
 | Changes in 1.2 | Post-M1 review. **§9.1: `ReplicaSnapshot` and `MergeResult` are `zen_domain` types** — §11.3 previously placed the snapshot in `zen_sync`, which would have inverted the dependency direction and blocked M2. **§2: name normalization now includes a Unicode NFC pass**, and §11.5.2 notes why the rule must be settled before the schema exists. §11.2 gained the `unorm_dart`, `characters` and `timezone` rows, the last with the constraint that it belongs to `zen_data` only. §11.5.2 notes that `assert` is stripped in release builds, so the database constraints are the only enforcement that ships. |
 | Changes in 1.1 | Milestone definitions of done now cite the correct acceptance scenarios (M2 previously cited conversion scenarios as merge ones). Added §11.13.1 on which milestones can be verified without real hardware, §11.5.5 on database failure handling, and an event-log cap in §11.5.1. |
 | Changes from 0.4 | §11 written in full: Flutter + Drift + Riverpod, four-package layout, schema and constraints, snapshot format, both sync transports, pre-merge backup, packaging, CI, testing requirements and the agent's implementation order. §3.6, §5.11 and §9.2 point at it. §12 became the declined-additions record; §13 gained the architecture decisions. |
@@ -453,6 +455,11 @@ The screen has three modes with the same layout: Add, Edit, and Convert (pre-fil
   The strategy is chosen through dependency injection. The MVP ships `NameUnionMergeStrategy` (§9.3).
 - **MERGE-2.** The merge MUST be **deterministic**: the same inputs in any order produce the same output, so two replicas running it independently reach identical results.
 - **MERGE-3.** Settings (§3.6) are per replica and are never merged.
+- **MERGE-3A (which collections are ordered).** Two kinds of collection appear in a snapshot, and they must not be treated alike.
+  - `ideas`, `tasks` and `tombstones` are **sets**. Their list form carries no meaning: the To Do list orders by `createdAt` (TODO-2) and the Ideas list groups by timeframe (IDEAS-1, IDEAS-4), so nothing downstream reads the order they arrived in. Two results holding the same members are the same result.
+  - A Task's `subtasks` and an Item's `tags` are **sequences**. Subtask order is user-controlled and visible (§3.3, TASKFORM-2, TODO-4); tag order is visible in the row's tag line (ROW-2). A merge that reorders them has changed the user's data.
+
+  Because the first three are sets, their list form needs a **canonical order** rather than a meaningful one, so that two merges of the same content are literally equal (MERGE-2, AC-19). Every output collection of the first kind is emitted **sorted ascending by `id`** — a strict total order, since output ids are distinct. Ids are UUIDv7 and therefore time-ordered, so this is also approximately creation order. The sequences keep the order step 4 and step 5 give them.
 - **MERGE-4.** The merge itself assumes only that "all reachable replica snapshots are available at merge time". How snapshots travel between replicas, and when a merge runs, is specified in §11.6.
 
 ### 9.2 Identity and conflict
@@ -460,43 +467,80 @@ The screen has three modes with the same layout: Add, Edit, and Convert (pre-fil
 - **MERGE-6.** Restricting name matching to active Items is what allows recurring names (NAME-7). An archived Task "Water the plants" from last week and today's active Task of the same name are different Items and MUST NOT be merged. Archived and deleted Tasks conflict by `id` only.
 
 ### 9.3 MVP rule: `NameUnionMergeStrategy`
-1. **Tombstones first.** Collect the union of all tombstones from all inputs. Drop every Idea whose `id` appears in that union. Tombstones carry no name, so an Idea created after a deletion, with a fresh id, survives even if its name matches the deleted one.
+
+**Record order.** Several rules below need a deterministic order over records, including records that share an `id`. *Record order* is a comparator over records of one kind that compares, in sequence: `id`; `updatedAt`; normalized name; raw name; `createdAt`; then the remaining scalar fields in their §3.2 / §3.3 declaration order; then, for Tasks, the subtask list by length and then element-wise by `id`, `name`, `status`, `updatedAt`.
+
+It is not a total order: records equal in every field compare equal. That is harmless, because such records are interchangeable — any choice between them yields the same output. It is therefore a total order *up to field-for-field equality*, which is all determinism requires.
+
+**Wherever a rule says "in record order", this comparator is meant.** An earlier draft said "sorted by `id`" in several places; that was wrong, because `id` is not a key here — a component normally holds one record per replica, all carrying the same `id`.
+
+1. **Tombstones first.** Collect the tombstones from all inputs and **reduce them to one per Idea `id`**: take the earliest `deletedAt`, and on a tie prefer `reason = converted` over `deleted`, since a conversion leaves behind a Task pointing at that id. A plain set union keeps two tombstones for one Idea when one replica deleted it and another converted it — a meaningless output, and a landmine for M3's tombstone table, which keys on `id`. `reason` is informational; nothing in this algorithm reads it.
+
+   Then drop every Idea whose `id` appears in the reduced set. Tombstones carry no name, so an Idea created after a deletion, with a fresh id, survives even if its name matches the deleted one.
+
 2. **Union.** Take all remaining Ideas and Tasks from all inputs.
+
 3. **Group** into conflict components (MERGE-5). A component of size 1 passes through unchanged.
-4. **Resolve** each component of size > 1 into one record:
+
+4. **Resolve** each component of size > 1 into one record.
+
+   **Choosing the primary record.** A component normally contains *several records that share the chosen `id`* — the same Item as it stands on each replica. "The record whose `id` was chosen" is therefore not yet a single record, and the choice decides whether a rename propagates or is silently reverted. The **primary record** is, among the records carrying the chosen `id`:
+
+   1. the one with the **latest `updatedAt`** — so the most recent edit wins, which is what makes a rename on one device survive the merge;
+   2. on a tie, the one whose **normalized name sorts first**;
+   3. on a further tie, the first **in record order**.
+
+   All three steps are content-based, so the result never depends on which replica a record arrived from, or on the order of `inputs` (MERGE-2).
+
+   *Why this matters:* rename "groceries list" to "Groceries" on the phone while the desktop still holds the old name. Both records carry the same `id`, so the component is `{phone, desktop}`. Without rule 1, the merge may pick the desktop's name and undo the rename — and being deterministic, it would undo it again after every future sync.
 
    | Field | Rule |
    |---|---|
    | `id` | The lexicographically smallest `id` in the component. Deterministic, and always one of the real conflicting ids. |
-   | `name` | The name of the record whose `id` was chosen (the **primary record**). |
-   | `context` / `description` | The longest, measured in characters. Tie: the one from the record with the latest `updatedAt`. Further tie: the primary record. |
-   | `tags` | Union, de-duplicated case-insensitively. Order: the primary record's tags first, then the rest in order of first appearance across records sorted by `id`. |
+   | `name` | The primary record's name, as chosen above. |
+   | `context` / `description` | The longest, measured in **grapheme clusters** (the unit NAME-2 counts). Ties, in order: among the tied-longest, the latest `updatedAt`; then the primary record **if its text is among the tied-longest**; then record order. |
+   | `tags` | Union, de-duplicated case-insensitively. Order: the primary record's tags in their own order, then tags contributed by the remaining records taken **in record order**, each record's in its own order, skipping duplicates. |
    | `timeframe` (Ideas) | The most urgent: `Now` > `Soon` > `Later` > `Distant`. |
    | `status` (Tasks) | Precedence `Done` > `Blocked` > `Todo`. |
-   | `isDeleted` (Tasks) | `true` if any record is deleted. `deletedAt` = earliest non-null. |
-   | `isArchived` (Tasks) | `true` if any record is archived **and** the resolved status is `Done`. `archivedAt` = earliest non-null. |
-   | `completedAt` | If the resolved status is `Done`: the earliest non-null among records with status `Done`. Otherwise null. |
+   | `isDeleted` / `deletedAt` (Tasks) | `isDeleted` is `true` if any record is deleted. `deletedAt` is the earliest non-null **when `isDeleted` is true, and null otherwise** (INV-4). |
+   | `isArchived` / `archivedAt` (Tasks) | `isArchived` is `true` if any record is archived **and** the resolved status is `Done`. `archivedAt` is the earliest non-null **when `isArchived` is true, and null otherwise** (INV-4). The condition on the flag is what keeps `archivedAt` from surviving a status that is no longer `Done`. |
+   | `completedAt` | If the resolved status is `Done`: the earliest non-null among records with status `Done`. Otherwise null (INV-1). |
    | `createdAt` | Earliest. |
    | `updatedAt` | Latest. |
-   | `sourceIdeaId` / `sourceIdeaCreatedAt` | From the primary record if non-null; otherwise the first non-null across records sorted by `id`. |
+   | `sourceIdeaId` / `sourceIdeaCreatedAt` | Resolved **as a pair**, never independently: take both fields from the first record whose `sourceIdeaId` is non-null — the primary record if it qualifies, otherwise the records in record order. §3.3 makes them one fact about one Idea, so a Task must never carry one Idea's id beside another Idea's creation time. |
    | `subtasks` | See step 5. |
 
-5. **Subtask resolution — union.** Subtask names are not unique (NAME-11), so matching is positional within a name.
-   - (a) Within each record, index the subtasks so that the *k*-th subtask bearing a given normalized name has key `(normalizedName, k)`, counting from the record's own list order.
-   - (b) Two subtasks across records are the *same subtask* if they share an `id`, **or** if they have the same `(normalizedName, k)` key. Take connected components.
-   - (c) The output list is the **union** of all such components. No subtask is dropped.
-   - (d) Each component resolves to one subtask: `id` = smallest id in the component; `name` = the name from that id's record; `status` = highest precedence in the component (`Done` > `Blocked` > `Todo`); `createdAt` = earliest; `updatedAt` = latest; `completedAt` per INV-1.
-   - (e) **Order:** first the subtasks of the primary record in their original order, then subtasks that appear only in other records, ordered by the `id` of the record they came from and then by their position within it.
+5. **Subtask resolution — union.** Matching is by `id` first, and by position-within-a-name only as a **fall-back for what `id` did not match**.
+
+   The two relations must not be combined into one "shares an `id` **or** shares a key" relation, because they chain: a single renamed subtask then drags two distinct subtasks into one component and destroys one of them. Rename subtask `1` from "Set" to "Warmup" on one replica, while the other still has `[Set 1, Set 2]`, and `A1 ~ B1` by id, `A2 ~ B2` by id, but `A1 ~ B2` by the key `(set, 0)` — one component, and the user's two "Set" subtasks silently become one. That breaches principle 1.2.4.
+
+   - (a) **Match by `id`.** Group subtasks across records that share an `id`. Ids are unique within a record, so each group holds at most one subtask per record.
+   - (b) **Key the remainder.** Among the subtasks *not* matched in (a), compute a key within each record: the *k*-th subtask bearing a given normalized name has key `(normalizedName, k)`, counting from that record's own list order over its unmatched subtasks only. Group those that share a key.
+   - (c) The output is the **union** of the groups from (a) and (b). No subtask is dropped. Because each subtask joins exactly one group, and each group holds at most one subtask per record, no group can contain two subtasks of the same record.
+   - (d) Each group resolves to one subtask: `id` = smallest id in the group; `name` from the **primary subtask** — the member with the latest `updatedAt`, then in record order — so a renamed subtask is not reverted; `status` = highest precedence in the group (`Done` > `Blocked` > `Todo`); `createdAt` = earliest; `updatedAt` = latest; `completedAt` = when the resolved status is `Done`, the earliest non-null among members whose status is `Done`, and null otherwise (INV-1).
+   - (e) **Order:** first the groups containing a subtask of the primary record, in that record's order; then the remaining groups, ordered by the first record **in record order** that contributed to the group, and within a record by that subtask's position.
+
+   Where matching fails, this produces a **duplicated** subtask rather than a deleted one — visible and fixable by hand, rather than silent loss.
+
 6. **Re-establish invariants** (§3.7).
-   - If the resolved Task status is `Done` but some unioned subtask is not `Done`, set the Task's status to `Todo` and clear `completedAt` and `isArchived` (INV-2, INV-3). Record this in the merge report. This happens when one replica completed a task while another added a new subtask to it.
-   - If two output Items of the same kind are both active and share a normalized name (possible when id-based grouping produces a rename collision), merge them by repeating steps 4–6 on that pair, so NAME-6 holds. This iteration terminates because each pass strictly reduces the number of active Items.
+   - If the resolved Task status is `Done` but some unioned subtask is not `Done`, set the Task's status to `Todo` and clear `completedAt`, `isArchived` **and `archivedAt`** (INV-1 through INV-4). Record this in the merge report. This happens when one replica completed a task while another added a new subtask to it.
+   - If output Items of the same kind are both active and share a normalized name, NAME-6 is broken and they must be combined. **Group every active output Item of that kind by normalized name, and resolve each group of size > 1 through steps 4–6 as a single component** — not by merging pairs. Pairwise merging is order-dependent once three Items collide, because the primary record of a pair need not be the primary of the whole group, which would break MERGE-2. Repeat until a pass changes nothing.
+
+     This is reachable even though step 3 already matches on names, because MERGE-5 restricts name matching to *active* records. An archived record can enter a component by `id`, become the primary, and carry its name into an output Item that the resolved status makes active again — landing on a name another component already resolved to.
+
+     **Termination.** The first pass can *increase* the number of active Items, because the repair above un-archives, so "each pass strictly reduces the active count" is false for that pass. Every later pass operates only on already-active Items, where nothing can be un-archived again, and merging strictly reduces their number — so the iteration terminates.
+
+     **For Ideas this branch provably never fires.** Every Idea is active (§2), so two components resolving to the same name would have shared an edge in step 3 and been one component. Assert this in a test rather than leave it as folklore.
+
 7. **Report.** `mergeReport` lists each component that was merged: its input ids, the output id, and any invariant repairs. A `merged` event is appended to the event log for each merged component.
 
+8. **Canonical output order.** Emit `ideas`, `tasks` and `tombstones` **sorted ascending by `id`**, per MERGE-3A. They are sets; sorting gives `MergeResult` a canonical form, which is what lets AC-19 compare two merges field for field and makes a snapshot file byte-identical for identical content. `tags` and `subtasks` keep the order steps 4 and 5 give them.
+
 ### 9.4 Known limitations of the MVP merge (accepted)
-- Un-completing a task on one replica is overridden if another replica still has it `Done`, because `Done` wins.
+- **Undo does not survive a peer that has not seen it.** Three flags are sticky, because step 4 resolves each by "true if any record has it": `status = Done`, `isDeleted`, and `isArchived`. So un-completing, restoring a deleted Task, and un-archiving a Task are each reverted by a replica that still holds the earlier state. The user's remedy is the same in all three cases: sync first, then undo, then sync again. This is the largest behavioural wart in the MVP merge and the most likely thing to warrant a better strategy later (§9.1).
 - Two genuinely different active Items that happen to share a name are merged into one.
 - An edit made on one replica can be lost if a longer text exists on another.
-- Reordering a Task's subtasks on one replica while renaming one of them on another can pair the wrong subtasks, because matching falls back to position within a name.
+- Subtasks that `id` cannot match fall back to position within a name, so reordering same-named subtasks on one replica while renaming one on another can pair the wrong two. The fall-back is deliberately ordered after `id` matching (step 5) so that the failure is a duplicated subtask rather than a destroyed one.
 - The step-6 repair is the one place where a Task's status changes without the user asking. It only ever moves a Task from `Done` to `Todo`, never the reverse, and it is always reported.
 
 ---
