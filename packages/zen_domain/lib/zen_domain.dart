@@ -8,6 +8,7 @@
 /// The layout follows §11.3:
 ///
 /// * `model/` — [Idea], [Task], [Subtask], [Tag], [ItemName], the enums.
+/// * `merge/` — [MergeStrategy], [NameUnionMergeStrategy] and §9's types.
 /// * `rules/` — the rules of §4, each returning a [Result].
 /// * `time/` — [Clock], [LocalTime], [TimeZoneRules], the End-of-Day calculator.
 /// * `ids/` — [IdGenerator].
@@ -19,6 +20,14 @@
 library;
 
 export 'src/ids/id_generator.dart';
+export 'src/merge/conflict_components.dart';
+export 'src/merge/field_resolution.dart';
+export 'src/merge/merge_report.dart';
+export 'src/merge/merge_strategy.dart';
+export 'src/merge/name_union_merge_strategy.dart';
+export 'src/merge/record_order.dart';
+export 'src/merge/replica_snapshot.dart';
+export 'src/merge/subtask_merge.dart';
 export 'src/model/enums.dart';
 export 'src/model/idea.dart';
 export 'src/model/invariants.dart';

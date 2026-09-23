@@ -233,6 +233,91 @@ That is correct and it qualifies D-M1-12 and D-M1-13. What those entries claim s
 **D-M1-14 — `Settings` and the repository interfaces were written in M1.**
 §11.13's M1 row lists entities, value objects, `Clock`, the §4 rules and the EoD calculator, but §11.1 places the repository interfaces in `zen_domain`, and `SettingsRepository` cannot be declared without the §3.6 settings record. Both are declarations with no behaviour to test; M3 implements them. §11.8's sync settings are deliberately not added yet — they arrive in M6, with the transports that read them.
 
+## M2 — `zen_domain` merge: `NameUnionMergeStrategy`
+
+Ten ambiguities in §9.3 were found before any code was written and put to the
+owner; all ten were accepted and folded into **`ZEN_SPEC.md` v1.4**, so they are
+specification, not decisions, and are not repeated here. What follows is what
+v1.4 still leaves to the implementer.
+
+**D-M2-1 — Record order is implemented as a comparator that is total *up to
+field-for-field equality*, not a total order.**
+§9.3 defines the comparison sequence but not what happens when two records tie.
+`compareIdeaRecords` covers every §3.2 field, so for Ideas a tie *is* equality
+and `record_order_test.dart` checks the equivalence directly over generated
+records. For Tasks §9.3 names four subtask fields for the element-wise
+comparison — `id`, `name`, `status`, `updatedAt` — so two Tasks can tie while
+differing in a subtask's `createdAt` or `completedAt`. That is implemented as
+written rather than widened, because it cannot change the output: step 5(d)
+resolves both of those by earliest across the whole group, and the group holds
+both records whichever one is called the primary. A test demonstrates it rather
+than leaving it as an argument.
+
+**D-M2-2 — The subtask primary's "then in record order" means the record it came
+from, not a subtask-level comparator.**
+§9.3 step 5(d) breaks a tie on `updatedAt` with "then in record order", a term
+§9.3 defines over *records*. A group holds at most one subtask per record
+(step 5(c)), so the record each member came from settles it, and
+`subtask_merge.dart` carries a `recordIndex` alongside each subtask for exactly
+this. The alternative reading — a subtask-level comparator — gives the same
+answer in every case, because two members of one group that came from records
+tying in record order came from records with identical subtask lists.
+
+**D-M2-3 — `merge` does not validate its inputs.**
+§9.3's invariant-preservation property is a claim about *valid* inputs, and the
+merge is a pure function with nowhere to report a violation to. The entity
+constructors' asserts catch a malformed record in development, and
+`datasetInvariantFailures` is what the tests assert with — including a test that
+the **generators** produce valid datasets, so a generator bug reports itself as
+a generator bug rather than as a merge failure. Per D-M1-16 the shipped
+enforcement is M3's `CHECK` constraints and unique indexes.
+
+**D-M2-4 — The merge reports the `merged` events rather than appending them.**
+HIST-2 and §9.3 step 7 ask for a `merged` event per merged component. MERGE-1
+requires the strategy to be pure and side-effect-free and §11.4.5 gives it no
+clock, so it cannot append to an event log. `MergeReport` carries what an event
+needs — kind, pass, input ids, output id, repairs — and M6's orchestrator, which
+holds the `EventLog`, writes them.
+
+**D-M2-5 — `MergedComponent` carries the pass that resolved it.**
+§9.3 step 7 asks for input ids, the output id and any repairs. The step-6 name
+re-pass merges Items that earlier passes already resolved, so its "input ids"
+are those passes' output ids, and a report without the pass number reads as a
+contradiction. It also makes `(kind, pass, outputId)` a strict total order over
+a report's components — within one pass the output ids are distinct, because
+each pass partitions its records and each part takes the smallest id among its
+own members — which is what lets AC-19 compare whole `MergeResult`s including
+their reports.
+
+**D-M2-6 — `MergeResult.asSnapshot(replicaId)` exists for the idempotence
+property.**
+§11.12 asks for `merge([merge([a, b])]) == merge([a, b])`, but `merge` takes
+`ReplicaSnapshot`s and returns a `MergeResult`, so the property cannot be
+written without a conversion. `replicaId` is arbitrary, which the merge's
+refusal to read it makes safe — and a test asserts that refusal directly.
+
+**D-M2-7 — A second, targeted generator exists for §9.3 step 6's name
+re-pass.**
+The random generator reaches that branch essentially never: it needs an archived
+record to win the primary slot, carry its name out, be un-archived by the INV-2
+repair, *and* land on a name another active Task holds. Measured over 300 seeds
+the four never coincided, so the properties were covering the riskiest path in
+the merge not at all. `archivedNameCollisionReplicas()` builds the shape and
+randomizes everything else, reaching the re-pass in about 70% of seeds, and the
+property group over it includes a **coverage assertion** so it cannot quietly
+become vacuous later.
+
+**D-M2-8 — Step-4 field resolution lives in its own file.**
+§11.11 asks that files stay under roughly 400 lines. `name_union_merge_strategy`
+reached 489 with the field rules inline, so `field_resolution.dart` holds how a
+single field resolves, `record_order.dart` holds only ordering, and the strategy
+reads as §9.3's numbered steps. No behaviour changed.
+
+**D-M2-9 — The convergence simulation is deliberately absent.**
+§11.12 item 3 needs two in-memory replicas and a script of user operations
+interleaved with sync points, which means the orchestrator. It belongs to M6 and
+is noted there, not skipped.
+
 ## Verification status (§11.13.1)
 
 §11.13.1 requires that no milestone be reported done on the strength of code
@@ -240,6 +325,7 @@ that has never run.
 
 | Milestone | Verified | How |
 |---|---|---|
+| M2 | **Yes** | 297 tests green under `dart test` (223 before M2, so 74 new), covering AC-13 through AC-19, every step and every field rule of §9.3, and the four property tests of §11.12 item 2 — order-independence, idempotence, invariant preservation against `datasetInvariantFailures`, and no resurrection — each over 300 seeds with the seed in every failure message. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean, and `zen_domain` still declares no dependency that touches IO. Pure Dart, so §11.13.1 puts this entirely in the left-hand column: there is nothing here that needs real hardware. |
 | M1 | **Yes** | 223 tests green under `dart test`, covering every rule in §4, every invariant in §3.7, the validation in §3.1 and §3.5, the EoD calculator at exact boundary instants including both DST transitions, and AC-1, AC-2, AC-3 and AC-7 as pure domain tests. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean, and `zen_domain` still declares no dependency that touches IO (`test/architecture_test.dart`). |
 | M0 | **Yes** | Flutter 3.47.5 / Dart 3.13.4 installed to `C:\src\flutter` on 2026-09-22 (archive SHA-256 checked against the release manifest). Every step of §11.10 run locally and green: `pub get` in all four packages, `dart analyze --fatal-infos --fatal-warnings` × 4 with no issues, `dart format --set-exit-if-changed`, `tools/check_no_datetime_now.sh`, `dart test` × 2, `flutter test` × 2. **Not yet observed on the GitHub Actions runner** — the workflow has never executed, since the repository has no remote. See the open item below. |
 

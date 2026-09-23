@@ -110,3 +110,26 @@ Idea anIdea({
     updatedAt: updatedAt ?? created,
   );
 }
+
+/// A [ReplicaSnapshot] for the merge tests (§9.1).
+///
+/// [replicaId] defaults to something recognisable in a failure message. The
+/// merge never reads it (MERGE-2), so tests rarely need to set it.
+ReplicaSnapshot aSnapshot({
+  String replicaId = 'replica',
+  List<Idea> ideas = const <Idea>[],
+  List<Task> tasks = const <Task>[],
+  List<IdeaTombstone> tombstones = const <IdeaTombstone>[],
+}) => ReplicaSnapshot(
+  replicaId: replicaId,
+  ideas: ideas,
+  tasks: tasks,
+  tombstones: tombstones,
+);
+
+/// An [IdeaTombstone] for [id], deleted at [base] unless told otherwise.
+IdeaTombstone aTombstone({
+  required String id,
+  DateTime? deletedAt,
+  TombstoneReason reason = TombstoneReason.deleted,
+}) => IdeaTombstone(id: id, deletedAt: deletedAt ?? base, reason: reason);
