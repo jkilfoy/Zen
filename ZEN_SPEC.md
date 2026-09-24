@@ -2,7 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.10 |
+| Document version | 1.11 |
+| Changes in 1.11 | Sixteen findings from the M6 agent's pre-implementation review, all accepted. **§11.6.5 step 3 no longer ends the pass when no peers are found** — it skipped publishing, so two fresh devices could never discover each other and the file transport would never have worked at all. **Step 7 now publishes the post-merge dataset, always, to every enabled transport, and skips the write when content is unchanged.** Transports now exchange `SnapshotEnvelope` rather than `ReplicaSnapshot` (§11.6.2), since step 3's dedupe compares `generatedAt`, which §9.1 keeps out of the domain type; `TransportAvailability` is defined. **§11.4.6 gains `DatasetRepository.replaceAll` and STORE-4 fixes its transaction order** — §11.6.5 step 6 required an operation no interface could perform. §11.6.3 states per-platform write semantics: atomic on Windows, delete-then-rename on Android SAF, which has no atomic replace, with generation-numbered files recorded as the upgrade path; temp files are renamed, swept and made identifiable. §11.6.6 fixes an illegal Windows filename and de-duplicates backups, whose retention otherwise spanned five hours. §11.6.1 makes a peer snapshot all-or-nothing and `nameNormalized` write-only. §11.8's import is a merge, never a replace. §11.12 item 3 places the convergence simulation. |
 | Changes in 1.10 | §11.8's `"Sync"` settings section (SET-4) was required but owned by no milestone: M6's row listed only `zen_sync` components, so the file transport would have shipped with no way to point it at a folder or trigger a sync. Assigned to M6. |
 | Changes in 1.9 | **REVIEW-4 reversed.** Each Review tab now carries an add button that creates an Item of that tab's kind — reviewing a list is when the next thing to capture comes to mind, and going back to Home to do it breaks the review. The old rule's remaining true parts (no subtask creation here; `"Make Task"` is not an add button) move to REVIEW-5, and REVIEW-6 keeps Home as the path NFR-2 is measured against. §5.1's map updated. |
 | Changes in 1.8 | §11.13.1's table listed M4–M5's widget and golden tests as headless-verifiable but never named *launching the app*, so a literal reader could take all of M4–M5 to be container-verifiable. Added to the hardware column. |
@@ -459,6 +460,11 @@ The screen has three modes with the same layout: Add, Edit, and Convert (pre-fil
 - **STORE-1.** Each replica owns one local database.
 - **STORE-2.** All reads and writes go through repository interfaces (`IdeaRepository`, `TaskRepository`, `SettingsRepository`, `EventLog`, `TombstoneStore`). UI code MUST NOT access the database directly. A later version must be able to add a remote-backed implementation without changing UI or domain code.
 - **STORE-3.** Multi-record operations are atomic: conversion (§4.4), merge application (§9) and archive sweeps (§4.5).
+- **STORE-4 (the order `replaceAll` must use).** The schema forces one order, and getting it wrong aborts mid-transaction rather than failing a test:
+  1. Delete `idea_tombstones`, then `ideas`, then `tasks` — tags and subtasks cascade.
+  2. Insert tombstones, then ideas, then tasks, then subtasks, then tags. Subtasks and tags need their owner row present for the foreign key, and `inv7_tombstone_insert` aborts if a tombstoned Idea's row still exists.
+
+  **`events` is deliberately outside this.** It carries no foreign key (§11.5.1), so a wholesale replace does not touch the audit history — which is the point, since the history of how the data got here survives the data being replaced.
 - *Concrete engine, schema, constraints and migrations: §11.5.*
 
 ---
@@ -562,7 +568,7 @@ It is not a total order: records equal in every field compare equal. That is har
 
 7. **Report.** `mergeReport` lists each component that was merged: its input ids, the output id, and any invariant repairs. A `merged` event is appended to the event log for each merged component.
 
-8. **Canonical output order.** Emit `ideas`, `tasks` and `tombstones` **sorted ascending by `id`**, per MERGE-3A. They are sets; sorting gives `MergeResult` a canonical form, which is what lets AC-19 compare two merges field for field and makes a snapshot file byte-identical for identical content. `tags` and `subtasks` keep the order steps 4 and 5 give them.
+8. **Canonical output order.** Emit `ideas`, `tasks` and `tombstones` **sorted ascending by `id`**, per MERGE-3A. They are sets; sorting gives `MergeResult` a canonical form, which is what lets AC-19 compare two merges field for field. It also makes a snapshot file byte-identical for identical content — but only of the `ReplicaSnapshot` itself; the envelope's `generatedAt` changes on every write, which is why §11.6.5 step 7 compares content and skips the write when nothing changed. `tags` and `subtasks` keep the order steps 4 and 5 give them.
 
 ### 9.4 Known limitations of the MVP merge (accepted)
 - **Undo does not survive a peer that has not seen it.** Three flags are sticky, because step 4 resolves each by "true if any record has it": `status = Done`, `isDeleted`, and `isArchived`. So un-completing, restoring a deleted Task, and un-archiving a Task are each reverted by a replica that still holds the earlier state. The user's remedy is the same in all three cases: sync first, then undo, then sync again. This is the largest behavioural wart in the MVP merge and the most likely thing to warrant a better strategy later (§9.1).
@@ -821,6 +827,14 @@ abstract interface class TombstoneStore { /* … */ }
 abstract interface class ConversionService {
   Future<Result<Task, RuleViolation>> convert(Idea idea, Task draft, DateTime now);
 }
+
+/// §11.6.5 step 6 and §11.6.6's restore. Replaces the whole dataset in one
+/// transaction. Declared as a single method for the same reason as
+/// `ConversionService`: the atomicity is the point, and a caller assembling it
+/// from smaller writes would lose it.
+abstract interface class DatasetRepository {
+  Future<void> replaceAll(ReplicaSnapshot snapshot);
+}
 ```
 
 ### 11.5 `zen_data`
@@ -927,23 +941,56 @@ Versioned JSON. Excludes settings (MERGE-3) and events.
 
 Subtask order is the array order. `formatVersion` is checked on read; an unknown higher version is refused with a clear message rather than parsed optimistically.
 
+**A peer snapshot is all-or-nothing.** If any record in it cannot be constructed — a name `ItemName.parse` rejects, an unrecognised `status`, `timeframe` or tombstone `reason`, a field that would break §3.7 — the **whole file is skipped** with a logged warning, exactly as an unparseable file is. Dropping the one bad record instead would be the quieter failure and therefore the worse one: the sync would appear to succeed while silently carrying less than the peer holds, and this device would then republish that reduced view. The peer republishes a good file on its next pass, so the cost of skipping is one round.
+
+**`nameNormalized` is written but never read back.** `ItemName` is constructible only through `parse`, which recomputes the normalized form, and that is deliberate: honouring a peer's value would let two replicas compute *different* merges from the same inputs whenever their normalization disagreed, breaking MERGE-2 — the property the LAN exchange in §11.6.4 depends on. The field stays in the format for external readers and diagnostics. A mismatch between the peer's value and the locally recomputed one is a genuine signal that two replicas normalize differently, so **log it as a warning** rather than ignoring it.
+
 #### 11.6.2 Transport interface
 
 ```dart
 abstract interface class SyncTransport {
   String get id;                                        // 'file' | 'lan'
   Future<TransportAvailability> availability();
-  Future<List<ReplicaSnapshot>> fetchPeerSnapshots();
-  Future<void> publish(ReplicaSnapshot snapshot);
+  Future<List<SnapshotEnvelope>> fetchPeerSnapshots();
+  Future<void> publish(SnapshotEnvelope envelope);
+}
+
+/// §11.6.1's envelope. Wraps a domain `ReplicaSnapshot` with the wire metadata
+/// §9.1 keeps out of the domain type.
+final class SnapshotEnvelope {
+  final int formatVersion;
+  final String replicaId;
+  final String deviceName;
+  final DateTime generatedAt;
+  final String appVersion;
+  final ReplicaSnapshot snapshot;
+}
+
+/// Whether a sync is possible right now, for the UI and the per-transport
+/// status line. Two fields and no other states.
+final class TransportAvailability {
+  final bool reachable;
+  /// Human-readable, shown to the user when `reachable` is false — e.g.
+  /// "Sync folder not available". Empty when reachable.
+  final String reason;
 }
 ```
+
+**Transports deal in envelopes, the merge deals in snapshots.** `fetchPeerSnapshots` must return envelopes because §11.6.5 step 3 de-duplicates on `generatedAt`, which §9.1 deliberately keeps out of `ReplicaSnapshot`. The orchestrator unwraps before merging, so the merge still sees only domain types.
 
 #### 11.6.3 `FileSnapshotTransport`
 Reads and writes snapshots in a directory. The same implementation serves three purposes: manual export/import, backup, and automatic sync through a folder kept in step by Syncthing or a cloud drive.
 
-- Filename: `zen-snapshot-<replicaId>.json`.
-- **Writes MUST be atomic**: write `zen-snapshot-<replicaId>.json.tmp-<uuid>`, flush, then rename over the target, so a peer never reads a half-written file.
-- Reads: every `zen-snapshot-*.json` in the directory whose replicaId differs from this device's. A file that fails to parse is skipped with a logged warning, never allowed to abort the sync.
+- Filename: `zen-snapshot-<replicaId>.json`. Temp files are `zen-tmp-<replicaId>-<uuid>.json` — a `.json` extension, because SAF derives a file's type from its MIME type on create and a name ending in `.tmp-…` risks being mangled; a name that does not match the read glob; and a `replicaId` so a device can identify its own leftovers (below).
+- **A reader must never see a fragment.** What that costs differs by platform, and the spec states both rather than assuming one:
+  - **Windows:** write temp, flush, rename over the target. Dart's `File.rename` replaces an existing file on Windows, so the swap is atomic and there is no window in which the snapshot is missing.
+  - **Android (SAF):** `DocumentsContract` offers no rename-over-existing and no atomic replace — `renameDocument` onto an occupied name fails or de-duplicates to `name (1).json`, and opening with `"wt"` truncates in place, which is precisely the torn read this rule exists to prevent. So: write temp, **delete the target, then rename the temp onto the freed name.** This is *not* atomic; there is a window in which no snapshot file exists for this replica.
+
+    That window is acceptable because **absent is not torn**. A peer reading mid-swap sees the old file, no file, or the complete new one — never a fragment. A missing peer file costs exactly one sync round, because a snapshot is idempotent republishable state rather than a log, and §11.6.3 already treats an unavailable folder as ordinary. A process that dies inside the window republishes on its next pass.
+
+    *Upgrade path, if that window ever proves to matter:* generation-numbered files (`zen-snapshot-<replicaId>-<seq>.json`, written under a fresh name that SAF will accept, older generations deleted afterwards, readers taking the highest `seq`). It removes the window entirely, at the cost of changing the filename convention on **both** platforms, since both write into one shared folder.
+- **Stale temps are swept.** A crash leaves a temp file behind, and in a Syncthing folder it replicates to every peer. On each publish the transport deletes temp files carrying **its own** `replicaId`. It MUST NOT delete another device's temps, which may be in flight.
+- Reads: every `zen-snapshot-*.json` in the directory. **The body's `replicaId` is authoritative and the filename is a convention** — the two disagree whenever a file is copied or renamed by hand. Skip any file whose body carries this device's own `replicaId`. A file that fails to parse is skipped with a logged warning, never allowed to abort the sync.
 - **Windows:** an ordinary directory path chosen with `file_selector`.
 - **Android:** a SAF persistable tree URI obtained with `ACTION_OPEN_DOCUMENT_TREE` and retained with `takePersistableUriPermission`. All access goes through `ContentResolver`; raw `dart:io` paths do not work under scoped storage and MUST NOT be attempted. A revoked or missing grant is a normal state: report "sync folder not available", keep the app fully usable offline, and offer to re-pick. **Never block capture on it.**
 
@@ -955,6 +1002,8 @@ Direct device-to-device sync over the local network, with no third party involve
 **Discovery.** The desktop registers `_zen-sync._tcp` on the default port **51789** (configurable) with TXT records `rid` (replicaId), `pv` (protocol version), `dn` (device name). The phone browses for it. mDNS is unreliable on some networks, so **a manual host:port entry is mandatory, not optional**, and the last successful address is remembered and tried first.
 
 **Pairing.** A pre-shared key (PSK), 32 random bytes, established once per device pair and stored on both.
+
+*Open for M7:* §11.8 stores `syncLanPeers`, including each `psk`, in the settings key-value table of an unencrypted SQLite file. M6 defines that storage but puts nothing secret in it; M7 is the first milestone that does, and should decide then whether the key belongs in platform secure storage instead.
 
 1. Desktop: Settings → "Pair a device" opens a 5-minute pairing window, generates a single-use 6-digit code, and displays both a QR code and the code with the host and port in text.
 2. Phone: scans the QR (`mobile_scanner`) or types host, port and code.
@@ -991,17 +1040,25 @@ The server MUST capture `S` before applying its merge, so that the snapshot it r
 3. For each **enabled** transport whose `availability()` reports reachable, call `fetchPeerSnapshots()`. Collect the results into one list.
    - A transport that fails — folder revoked, desktop not running, Wi-Fi elsewhere — contributes nothing and is recorded as a per-transport status. **It MUST NOT abort the pass**; the other transport's peers are still merged.
    - If two transports return snapshots for the **same** `replicaId`, keep only the one with the later `generatedAt`. The merge would reconcile duplicates correctly anyway, but discarding the stale copy keeps the merge report readable.
-   - If no peers were obtained at all, finish with "nothing to sync" and the per-transport reasons.
+   - If no peers were obtained at all, **skip to step 7 and publish anyway.** Do *not* finish early. Publishing is the only thing that makes this device visible to the others, so a run that returns without publishing leaves an empty folder empty: device A finds no peers and writes nothing, device B does the same, and the two never discover each other. That is the ordinary first-run path, not an edge case.
 4. **Write a pre-merge backup** (§11.6.6).
 5. `merge([local, ...peers])`.
-6. Apply the result in **one transaction**, by **replacing the dataset wholesale** — delete, then insert — rather than upserting row by row. SQLite evaluates unique indexes per statement and has no deferrable constraints, so a row-by-row application transiently collides whenever two Tasks swap names, and the INV-2 trigger (§11.5.2) can abort on a half-applied task. Deleting first removes both hazards, because nothing old remains when the new rows land. Tombstones are unioned; Settings and events are untouched. Append a `merged` event per merged component, per §9.3 step 7.
-7. Call `publish(localSnapshot)` on each enabled transport. For the file transport this writes the snapshot file; for LAN it is a no-op, since the exchange in §11.6.4 already delivered it.
+6. Apply the result through `DatasetRepository.replaceAll` (§11.4.6) in **one transaction**, by **replacing the dataset wholesale** — delete, then insert — rather than upserting row by row. SQLite evaluates unique indexes per statement and has no deferrable constraints, so a row-by-row application transiently collides whenever two Tasks swap names, and the INV-2 trigger (§11.5.2) can abort on a half-applied task. Deleting first removes both hazards, because nothing old remains when the new rows land. Tombstones are unioned; Settings and events are untouched. Append a `merged` event per merged component, per §9.3 step 7.
+7. **Publish, always, and publish what the database now holds.** Build the envelope from the dataset *after* step 6 rather than from the snapshot taken at step 2 — the pre-merge snapshot describes a state this device has already left, and relaying it costs every peer an extra round to learn what this one already knows. Publishing post-merge converges faster and makes the folder's contents mean what they appear to mean.
+
+   Call `publish` on **each enabled transport, whether or not `availability()` reported it reachable** — attempting the write is how a transport discovers it is usable, and a failure is recorded per transport rather than aborting the pass. For the file transport this writes the snapshot file; for LAN it is a no-op, since the exchange in §11.6.4 already delivered it.
+
+   **Skip the write when the content is unchanged.** Compare the `ReplicaSnapshot` — not the envelope, whose `generatedAt` differs on every pass — against what this transport already holds. An unchanged dataset republished every 15 minutes wakes Syncthing or a cloud drive with an identical payload under a new timestamp for no reason, and it is what makes §9.3 step 8's byte-identity claim false in practice.
 8. Record `lastSyncAt`, the per-transport outcome, and the merge report.
 
 Triggers: manual `"Sync now"` on both platforms; on app foreground when `syncOnForeground`; and on a timer every `syncIntervalMinutes` while the app is open. All are subject to the single-flight lock. **No trigger may block the UI**, and a sync failure is never surfaced as a blocking dialog — capture must remain usable regardless (NFR-1).
 
 #### 11.6.6 Pre-merge backup
-Before step 6 of every sync, write the local snapshot to `backups/pre-merge-<ISO8601>.json` in application-private storage. Keep the newest **20** and delete older ones. Settings → "Restore from backup…" lists them by timestamp and restores one, replacing ideas, tasks and tombstones in a single transaction after an explicit confirmation.
+Before step 6 of every sync, write the local snapshot to `backups/pre-merge-<timestamp>.json` in application-private storage, where `<timestamp>` is the instant with its colons replaced — `pre-merge-2026-09-24T18-30-00-000Z.json`. **Plain ISO-8601 is not a legal Windows filename**, because `:` is forbidden there.
+
+**Skip the write when the content equals the newest existing backup.** Without this, retention is far shorter than it looks: 20 backups, one before every merge, two devices on the 15-minute timer, and the whole history spans about five hours — so a merge bug noticed the next morning has no clean backup left, which is exactly the failure this file exists to insure against. Consecutive backups are identical whenever the intervening merge changed nothing, which is the common case, so de-duplicating makes the same 20 files span days and every retained file represent a real change. Keep the newest **20** after de-duplication and delete older ones.
+
+Settings → "Restore from backup…" lists them by timestamp and restores one through `DatasetRepository.replaceAll` (§11.4.6, STORE-4) after an explicit confirmation.
 
 This is cheap insurance: the snapshot codec already exists, and a merge bug is the highest-severity failure available in this design (§9.4).
 
@@ -1029,6 +1086,8 @@ These extend §3.6. They are per replica and are never merged.
 | `lastSyncAt` | timestamp \| null | `null` | Read-only display. |
 
 The Settings screen gains a `"Sync"` section showing: each transport's toggle and status, the folder picker, the pairing flow, the paired-device list with an unpair action, `"Sync now"`, the last sync time and result, `"Export snapshot…"`, `"Import snapshot…"`, and `"Restore from backup…"`.
+
+**`"Import snapshot…"` is a merge, never a replace.** The chosen file is treated as one more peer snapshot and run through the ordinary orchestration of §11.6.5, pre-merge backup included. A replace would be destructive and irreversible, and nothing in the UI warns that it would be. `"Restore from backup…"` is the replace, and it is the only one.
 
 ### 11.9 Build, packaging and distribution
 
@@ -1066,7 +1125,9 @@ Beyond NFR-5:
    - *idempotence*: `merge([merge([a, b])]) == merge([a, b])`;
    - *invariant preservation*: the output satisfies every rule in §3.7 for any valid inputs;
    - *no resurrection*: no tombstoned id appears in the output (AC-17).
-3. **A convergence simulation.** Two in-memory replicas, a randomly generated script of user operations (create, edit, complete, delete, convert, archive) interleaved with random sync points. After a final mutual sync, assert the replicas are field-for-field identical and all invariants hold. Run it over many seeds in CI. This is the test most likely to find what §9.4 has not anticipated.
+3. **A convergence simulation.** Two replicas backed by real databases, a randomly generated script of user operations (create, edit, complete, delete, convert, archive) interleaved with random sync points through a real transport. After a final mutual sync, assert the replicas are field-for-field identical and all invariants hold. Run it over many seeds in CI. This is the test most likely to find what §9.4 has not anticipated.
+
+   **It lives in `zen_app/test/integration/`.** It needs `zen_data` and `zen_sync` together, and §11.1's arrows give no other package that has both: making `zen_data` a dev-dependency of `zen_sync` would drag Flutter into `zen_sync` and break `dart test` on it. `zen_app` is the composition root, already depends on both, and runs under `flutter test`, so it costs no new dependency arrow. It is not a widget test; the `integration/` directory and a comment at the top saying why it is there keep that from reading as a mistake.
 4. **EoD tests** at exact boundary instants, including both DST transitions and the spring-forward case where the configured time does not exist.
 5. **Migration tests**, generated by Drift, for every schema version.
 6. **Widget tests** for the flows in §5.1, and **golden tests** for the three completion-circle states in TODO-3 plus their disabled variants, since those are visual specifications.
