@@ -111,6 +111,22 @@ class _IdeasTabState extends ConsumerState<IdeasTab> {
   }
 }
 
+/// IDEAS-1, B4. How a timeframe header is set.
+///
+/// Larger than an Idea's name and in the muted colour, so the four headers read
+/// as structure and the Ideas under them carry the weight. Material's
+/// `titleMedium` is 16sp — the same size as the `bodyLarge` an Idea name uses,
+/// which is why the headers did not separate from the list before. The step to
+/// 18 is deliberately small: IDEAS-1's headers are signposts, not titles, and
+/// `titleLarge` at 22sp overpowers the content it labels.
+TextStyle? groupHeaderStyle(BuildContext context) => Theme.of(context)
+    .textTheme
+    .titleMedium
+    ?.copyWith(
+      fontSize: 18,
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
+
 /// IDEAS-1, IDEAS-3. One timeframe group and its header.
 class _Group extends StatelessWidget {
   const _Group({
@@ -142,7 +158,7 @@ class _Group extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         ListTile(
-          title: Text(label, style: Theme.of(context).textTheme.titleMedium),
+          title: Text(label, style: groupHeaderStyle(context)),
           trailing: Icon(
             expanded && canExpand ? Icons.expand_less : Icons.expand_more,
           ),

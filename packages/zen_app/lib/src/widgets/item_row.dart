@@ -70,6 +70,13 @@ class ItemRow extends StatelessWidget {
   /// between their buttons. A row with no trailing action does not need it.
   static const double trailingRowPadding = 12;
 
+  /// ROW-3, ROW-5, B2. The region that opens the Edit screen.
+  ///
+  /// Named so that a test can measure it: ROW-5's "MUST NOT overlap the
+  /// row-opens-Edit tap region" is a statement about *this* rectangle, not
+  /// about where the glyphs happen to stop.
+  static const Key tapRegionKey = Key('item-row-tap');
+
   @override
   Widget build(BuildContext context) {
     final TextTheme text = Theme.of(context).textTheme;
@@ -99,21 +106,31 @@ class ItemRow extends StatelessWidget {
         children: <Widget>[
           ?leading,
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                // ROW-3. The tap region is the text block alone, so that
-                // ROW-5's trailing button can never overlap it.
-                InkWell(
-                  onTap: onOpen,
-                  child: Padding(
+            // ROW-3, B2. The tap region is the whole of the row's text column,
+            // not the glyphs inside it: `Expanded` gives a tight width, so the
+            // `InkWell` fills everything between the leading control and the
+            // trailing action. ROW-5's separation is preserved because the
+            // trailing button sits outside this `Expanded` entirely, beyond
+            // [trailingGap].
+            //
+            // The subtask rows are inside the region too, so a tap on a subtask
+            // name opens the parent Task. Their completion circles keep working:
+            // a nested `InkResponse` wins the gesture arena against the
+            // `InkWell` above it.
+            child: InkWell(
+              key: tapRegionKey,
+              onTap: onOpen,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: textBlock,
                   ),
-                ),
-                ...children,
-              ],
+                  ...children,
+                ],
+              ),
             ),
           ),
           if (trailing != null) ...<Widget>[

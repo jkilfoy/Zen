@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_app/src/screens/unreadable_database_screen.dart';
+import 'package:zen_app/src/widgets/item_row.dart';
 import 'package:zen_data/zen_data.dart';
 import 'package:zen_domain/zen_domain.dart';
 
@@ -154,9 +155,14 @@ void main() {
       expect(first.width, greaterThanOrEqualTo(48));
 
       // "separated from the text block by at least 16 dp/px", and it never
-      // overlaps the row-opens-Edit tap region (ROW-3).
-      final Rect name = tester.getRect(find.text('First idea'));
-      expect(first.left - name.right, greaterThanOrEqualTo(16));
+      // overlaps the row-opens-Edit tap region (ROW-3). Measured against the
+      // tap region itself rather than the glyphs: since B2 that region fills
+      // the row, so the text's right edge would flatter the result.
+      final Rect tapRegion = tester.getRect(
+        find.byKey(ItemRow.tapRegionKey).first,
+      );
+      expect(first.left - tapRegion.right, greaterThanOrEqualTo(16));
+      expect(tapRegion.overlaps(first), isFalse);
     });
   });
 

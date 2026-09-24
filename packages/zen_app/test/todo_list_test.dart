@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_app/src/router.dart';
 import 'package:zen_app/src/widgets/completion_circle.dart';
+import 'package:zen_app/src/widgets/item_row.dart';
 import 'package:zen_domain/zen_domain.dart';
 
 import 'support/harness.dart';
@@ -227,6 +228,65 @@ void main() {
       expect(find.text('Add subtask'), findsNothing);
     },
   );
+
+  testWidgets(
+    'B2: tapping anywhere right of the completion circle opens Edit Task',
+    (WidgetTester tester) async {
+      final ZenHarness harness = ZenHarness();
+      await seedTask(
+        harness,
+        name: 'Buy milk',
+        subtasks: const <(String, TaskStatus)>[
+          ('Oat, not dairy', TaskStatus.todo),
+        ],
+      );
+      await openTodo(tester, harness);
+
+      // Empty space to the right of the name, well past where the glyphs stop.
+      final Rect region = tester.getRect(
+        find.byKey(ItemRow.tapRegionKey).first,
+      );
+      await tester.tapAt(Offset(region.right - 8, region.top + 8));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edit Task'), findsOneWidget);
+    },
+  );
+
+  testWidgets('B2: the region stops short of the leading completion circle', (
+    WidgetTester tester,
+  ) async {
+    final ZenHarness harness = ZenHarness();
+    await seedTask(harness, name: 'Buy milk');
+    await openTodo(tester, harness);
+
+    final Rect region = tester.getRect(find.byKey(ItemRow.tapRegionKey).first);
+    final Rect circle = tester.getRect(circles.first);
+
+    // "to the right of the completion circle for tasks".
+    expect(region.left, greaterThanOrEqualTo(circle.right));
+  });
+
+  testWidgets('B2: a subtask circle still toggles rather than opening Edit', (
+    WidgetTester tester,
+  ) async {
+    final ZenHarness harness = ZenHarness();
+    final Task task = await seedTask(
+      harness,
+      name: 'Move',
+      subtasks: const <(String, TaskStatus)>[('Pack', TaskStatus.todo)],
+    );
+    await openTodo(tester, harness);
+
+    // The subtask rows are inside the tap region now, so the nested
+    // InkResponse has to win the gesture arena against the InkWell above it.
+    await tester.tap(circles.at(1));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit Task'), findsNothing);
+    final Task after = (await harness.tasks.findById(task.id))!;
+    expect(after.subtasks.single.status, TaskStatus.done);
+  });
 
   testWidgets('ROW-3: tapping the name opens Edit Task', (
     WidgetTester tester,

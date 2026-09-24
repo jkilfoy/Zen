@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zen_app/src/widgets/item_row.dart';
 import 'package:zen_domain/zen_domain.dart';
 
 import 'support/harness.dart';
@@ -202,6 +203,53 @@ void main() {
     await tester.tap(find.text('Distant (1)'));
     await tester.pumpAndSettle();
     expect(find.text('Someday thing'), findsOneWidget);
+  });
+
+  testWidgets('B2: tapping empty space on an idea row opens Edit Idea', (
+    WidgetTester tester,
+  ) async {
+    final ZenHarness harness = ZenHarness();
+    await seedIdea(harness, name: 'Read SICP');
+    await openIdeas(tester, harness);
+
+    final Rect region = tester.getRect(find.byKey(ItemRow.tapRegionKey).first);
+    await tester.tapAt(Offset(region.right - 8, region.top + 8));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit Idea'), findsWidgets);
+  });
+
+  testWidgets('B2: the region stops short of the Make Task button', (
+    WidgetTester tester,
+  ) async {
+    final ZenHarness harness = ZenHarness();
+    await seedIdea(harness, name: 'Read SICP');
+    await openIdeas(tester, harness);
+
+    final Rect region = tester.getRect(find.byKey(ItemRow.tapRegionKey).first);
+    final Rect button = tester.getRect(
+      find.widgetWithText(OutlinedButton, 'Make Task'),
+    );
+
+    // "to the left of the Make Task button for ideas", with ROW-5's 16 dp.
+    expect(button.left - region.right, greaterThanOrEqualTo(16));
+  });
+
+  testWidgets('B4: the timeframe headers are larger and fainter than an idea', (
+    WidgetTester tester,
+  ) async {
+    final ZenHarness harness = ZenHarness();
+    await seedIdea(harness, name: 'Read SICP');
+    await openIdeas(tester, harness);
+
+    final TextStyle header = tester.widget<Text>(find.text('Now (1)')).style!;
+    final TextStyle name = tester.widget<Text>(find.text('Read SICP')).style!;
+    final ColorScheme scheme = Theme.of(tester.element(find.text('Now (1)')))
+        .colorScheme;
+
+    expect(header.fontSize, greaterThan(name.fontSize!));
+    expect(header.color, scheme.onSurfaceVariant);
+    expect(header.color, isNot(scheme.onSurface));
   });
 
   testWidgets('IDEAS-6: the Make Task button carries its accessibility label', (
