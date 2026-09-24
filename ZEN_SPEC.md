@@ -2,7 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.9 |
+| Document version | 1.10 |
+| Changes in 1.10 | §11.8's `"Sync"` settings section (SET-4) was required but owned by no milestone: M6's row listed only `zen_sync` components, so the file transport would have shipped with no way to point it at a folder or trigger a sync. Assigned to M6. |
 | Changes in 1.9 | **REVIEW-4 reversed.** Each Review tab now carries an add button that creates an Item of that tab's kind — reviewing a list is when the next thing to capture comes to mind, and going back to Home to do it breaks the review. The old rule's remaining true parts (no subtask creation here; `"Make Task"` is not an add button) move to REVIEW-5, and REVIEW-6 keeps Home as the path NFR-2 is measured against. §5.1's map updated. |
 | Changes in 1.8 | §11.13.1's table listed M4–M5's widget and golden tests as headless-verifiable but never named *launching the app*, so a literal reader could take all of M4–M5 to be container-verifiable. Added to the hardware column. |
 | Changes in 1.7 | §11.13: **M4 and M5 now run as one session with a commit at each.** The old boundary cut through shared files rather than between them — §5.3 and §5.4 make Add and Edit the same screens in different modes, and three of M4's own affordances (ROW-3, TODO-6, REVIEW-1) point at M5's screens. The work is now sequenced by shared component rather than by user journey. |
@@ -1096,7 +1097,7 @@ Sequence the work by **shared component** rather than by user journey:
 | **M3** | `zen_data`: Drift schema, constraints, partial unique indexes, repositories, `ConversionService`, archive sweeper | **AC-6, AC-8, AC-9, AC-10** pass against a real in-memory database, AC-8/9/10 exercising the partial unique index rather than an application check. Migration test harness in place |
 | **M4** | `zen_app` capture path: Home, Add Idea, Add Task, To Do list, Ideas list, completion circles, `"Make Task"` | **AC-1, AC-2, AC-3, AC-7** pass again as widget tests; **AC-11, AC-12** pass via the `"Make Task"` entry point. The app runs on both platforms |
 | **M5** | Remaining screens: Edit screens, Advanced details, Archived Tasks, Search, Settings, decor and theme | §5 fully implemented. **AC-4, AC-5** pass on the Edit Task screen; **AC-10** passes through the Archived Tasks UI; **AC-11** also passes via the Edit Idea entry point. Golden tests for the TODO-3 circle states |
-| **M6** | `zen_sync` core: snapshot codec, orchestrator, pre-merge backup, `FileSnapshotTransport` including Android SAF | Two databases converge through a shared directory; convergence simulation (§11.12, item 3) passes over many seeds. **The Android SAF path needs a real device and is verified by hand** (§11.13.1) |
+| **M6** | `zen_sync` core: snapshot codec, orchestrator, pre-merge backup, `FileSnapshotTransport` including Android SAF — **plus §11.8's `"Sync"` section in Settings (SET-4)**, without which the transport cannot be configured or invoked and the milestone ships unusable | Two databases converge through a shared directory; convergence simulation (§11.12, item 3) passes over many seeds. **The Android SAF path needs a real device and is verified by hand** (§11.13.1) |
 | **M7** | `LanSyncTransport`: server, client, discovery, pairing, crypto | Protocol, crypto and merge-exchange logic covered by automated tests against a loopback server. **End-to-end verification needs a real phone and PC on one Wi-Fi network**, including the manual host:port fallback with mDNS disabled (§11.13.1) |
 | **M8** | Packaging: Inno Setup installer, signed APK, tagged release workflow | **Requires a Windows machine and an Android device** (§11.13.1). Both artifacts install and run on clean machines |
 
