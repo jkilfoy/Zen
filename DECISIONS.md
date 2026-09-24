@@ -696,6 +696,47 @@ android sdk install ndk/28.2.13676358
 
 ---
 
+**D-M4-17 — NFR-2 is met, and the startup cost is almost entirely the engine.**
+Measured on 2026-09-24 with `flutter run --profile --trace-startup`, profile
+rather than release because release disables the VM service and
+`--trace-startup` then has nothing to read. Profile is AOT-compiled exactly as
+release is, so the figures are representative.
+
+| | Android (Galaxy S20 FE, first launch after install) | Windows (existing database) |
+|---|---|---|
+| `timeToFrameworkInit` | 360 ms | 946 ms |
+| `timeAfterFrameworkInit` | 834 ms | **42 ms** |
+| `timeToFirstFrame` | 1.19 s | 988 ms |
+
+The two `timeAfterFrameworkInit` figures are the same code — `main()`'s four
+platform round trips, `openDatabase` with its `PRAGMA integrity_check`, the
+settings read and the first archive sweep. The difference is that the Android
+run was the **first launch after install**, where `openDatabase` creates the
+whole schema, every index and all seven triggers rather than opening an
+existing file. Steady state is the Windows number: **42 ms**, which is nothing.
+
+Cold start from the home screen on the phone, release build, measures about
+**500 ms** by stopwatch, which is what 360 ms of engine plus ~40 ms of our code
+plus Android process start should come to. NFR-2 asks for "under 1.5 s on a
+mid-range Android device" from cold start to a focused name field. **Met, with
+room.**
+
+Two conclusions follow, and they point away from work rather than towards it.
+Deferring `_deviceName()` and moving `ArchiveScheduler.start()` after `runApp`
+were both considered — neither is worth doing, because together they are a
+fraction of 42 ms and both would trade a measurable guarantee (EOD-3 running
+before anything is on screen) for an unmeasurable saving. And the earlier
+reading of ~1.5 s on both platforms was a **debug** build: Dart under JIT from a
+kernel blob, assertions live — including the `invariantFailures` check every
+`Task`, `Idea` and `Subtask` constructor runs, which release strips entirely —
+and the VM service attached. Debug startup is not evidence about NFR-2.
+
+Both traces were first-launch-after-build with cold file caches, so both engine
+figures are pessimistic; Windows' 946 ms especially, against a freshly linked
+executable.
+
+---
+
 ## M5 — the remaining screens
 
 **D-M5-1 — Archived and deleted Tasks open through the ordinary Edit Task
@@ -762,7 +803,7 @@ that has never run.
 | Milestone | Verified | How |
 |---|---|---|
 | M5 | **Yes** | §5 is fully implemented and 87 tests are green under `flutter test` in `zen_app`. **AC-4** and **AC-5** pass on the Edit Task screen, **AC-10** passes through the Archived Tasks UI *and* through Search's Restore, and **AC-11** passes via the Edit Idea entry point as well as `"Make Task"`. §11.12 item 6's golden tests exist for all three TODO-3 circle states and all three disabled variants — **on Windows only** (D-M4-8); CI skips them. HOME-5's five shortcuts, NFR-7 at 400 px, ROW-5's three distances and §11.5.5's recovery screen each have a test. Confirmed by hand on **2026-09-24** alongside M4, over the whole of `MANUAL_VERIFICATION.md`. |
-| M4 | **Yes** | The headless half: 349 tests in `zen_domain` (36 new, for `updateTask`, `logicalDayOf` and `SearchQuery`), 182 in `zen_data`, 87 in `zen_app`. **AC-1, AC-2, AC-3, AC-7** pass again as widget tests against a real in-memory database, and **AC-8, AC-9, AC-11, AC-12** pass through the screens. `dart analyze --fatal-infos --fatal-warnings` clean across all four packages, `dart format` clean. **"The app runs on both platforms" is now established by hand,** on **2026-09-24**, against `MANUAL_VERIFICATION.md`: W-1 through W-12 on Windows 10 22H2 built with Visual Studio Build Tools 2022 17.14.41, and A-1 through A-9 plus Z-1 and Z-2 on an `android-36.1` `x86_64` emulator (`Medium-Phone-API-36.1`). All accepted by the owner. Getting there needed three toolchain changes, none of them code: the VS 2022 C++ workload with CMake tools and the Windows 10 SDK, Android `cmdline-tools` plus accepted licences, and NDK 28.2.13676358 installed by hand (D-M4-16). Windows builds are run from an elevated terminal in place of Developer Mode, which is the owner's standing choice. **One number is measured but not met the way it was hoped:** cold start to a focused name field is about 1.5 s on both platforms — inside NFR-2's "under 1.5 s" target, but measured on **debug** builds, so it is not yet the figure NFR-2 is about. See the open item below. |
+| M4 | **Yes** | The headless half: 349 tests in `zen_domain` (36 new, for `updateTask`, `logicalDayOf` and `SearchQuery`), 182 in `zen_data`, 87 in `zen_app`. **AC-1, AC-2, AC-3, AC-7** pass again as widget tests against a real in-memory database, and **AC-8, AC-9, AC-11, AC-12** pass through the screens. `dart analyze --fatal-infos --fatal-warnings` clean across all four packages, `dart format` clean. **"The app runs on both platforms" is now established by hand,** on **2026-09-24**, against `MANUAL_VERIFICATION.md`: W-1 through W-12 on Windows 10 22H2 built with Visual Studio Build Tools 2022 17.14.41, and A-1 through A-9 plus Z-1 and Z-2 on an `android-36.1` `x86_64` emulator (`Medium-Phone-API-36.1`). All accepted by the owner. Getting there needed three toolchain changes, none of them code: the VS 2022 C++ workload with CMake tools and the Windows 10 SDK, Android `cmdline-tools` plus accepted licences, and NDK 28.2.13676358 installed by hand (D-M4-16). Windows builds are run from an elevated terminal in place of Developer Mode, which is the owner's standing choice. **NFR-2 is measured and met:** about **500 ms** cold from the home screen on the phone, against a target of "under 1.5 s on a mid-range Android device". D-M4-17 has the `--trace-startup` split. |
 | M3 | **Yes** | 182 tests green under `flutter test` in `zen_data`, plus 313 in `zen_domain` (16 new there, for EOD-2A, INV-8 and INV-9). Sixty-seven of the 182 are constraint tests written in raw SQL with the repositories bypassed: every `CHECK`, both partial unique indexes, all seven triggers, the foreign keys and the cascades are attacked and required to fail, and each assertion names the constraint that fired, so a test cannot pass because some other constraint objected first. AC-6, AC-8, AC-9 and AC-10 pass against a real in-memory database, with AC-8/9/10 reaching the partial index rather than an application check. The §11.5.3 harness is in place: `drift_schemas/drift_schema_v1.json` is committed and a test verifies the live schema against it. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean. §11.13.1 puts all of M3 in the left-hand column and that held — Drift ran headlessly throughout and nothing here needs real hardware. |
 | M2 | **Yes** | 297 tests green under `dart test` (223 before M2, so 74 new), covering AC-13 through AC-19, every step and every field rule of §9.3, and the four property tests of §11.12 item 2 — order-independence, idempotence, invariant preservation against `datasetInvariantFailures`, and no resurrection — each over 300 seeds with the seed in every failure message. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean, and `zen_domain` still declares no dependency that touches IO. Pure Dart, so §11.13.1 puts this entirely in the left-hand column: there is nothing here that needs real hardware. |
 | M1 | **Yes** | 223 tests green under `dart test`, covering every rule in §4, every invariant in §3.7, the validation in §3.1 and §3.5, the EoD calculator at exact boundary instants including both DST transitions, and AC-1, AC-2, AC-3 and AC-7 as pure domain tests. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean, and `zen_domain` still declares no dependency that touches IO (`test/architecture_test.dart`). |
@@ -777,17 +818,11 @@ Nothing in this table may be treated as complete until its column reads "Yes".
   `subosito/flutter-action@v2` pin and the Linux-vs-Windows line-ending
   handling are unproven. This resolves the first time the repository is pushed.
 
-- **NFR-2 has not been measured on a release build.** Cold start to a focused
-  name field is about **1.5 s** on both platforms, which clears NFR-2's "under
-  1.5 s" only barely — and both readings are from **debug** builds, where Dart
-  runs JIT from a kernel blob rather than from an AOT snapshot and the VM
-  service is attached. The figure NFR-2 asks about is a release build on a
-  mid-range phone, and it has not been taken. Nor has the startup path been
-  profiled: `main.dart` awaits four platform round trips and a full
-  `PRAGMA integrity_check` before `runApp`, and two of those — the device name
-  and the archive sweep — need not block the first frame at all. Until
-  `flutter run --release --trace-startup` has been read, any claim about NFR-2
-  is a guess. Raised by the owner on 2026-09-24.
+- **`PRAGMA integrity_check` scales with database size.** D-M3-11 put it on
+  every open to satisfy §11.5.5, and it is a full scan of every page. It is not
+  a startup cost worth acting on today — see D-M4-17, where the whole of
+  `main()` measures 42 ms — but it grows with the file, and this app is meant
+  to run for years. Worth re-measuring, not worth pre-optimising.
 
 - **The goldens exist on Windows only** (D-M4-8). The Linux CI runner skips
   them, so they are not a check on every push, only on every local

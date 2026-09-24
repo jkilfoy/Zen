@@ -12,11 +12,11 @@ what to report back.
 > 22H2 (Visual Studio Build Tools 2022 17.14.41), A-1 … A-9 and Z-1, Z-2 on an
 > `android-36.1` `x86_64` emulator. Every step accepted by the owner.
 >
-> One caveat carried forward: **A-2 was measured on a debug build.** Cold start
-> to a focused name field was about 1.5 s on both platforms — inside NFR-2's
-> target, but debug builds run Dart under JIT with the VM service attached, so
-> this is not yet the number NFR-2 is about. Re-measure on a release build; it
-> is an open item in `DECISIONS.md`.
+> **A-2 was then re-measured properly.** The first reading of ~1.5 s was a
+> debug build and told us nothing about NFR-2. On a release build, cold from
+> the home screen on a Galaxy S20 FE, it is about **500 ms**; a
+> `--profile --trace-startup` run puts our own `main()` at **42 ms** and the
+> rest at the engine floor. NFR-2 is met with room. D-M4-17 has the figures.
 >
 > The sections below stand as the record of what was checked, and as the script
 > to re-run after a change that could plausibly affect any of it.
