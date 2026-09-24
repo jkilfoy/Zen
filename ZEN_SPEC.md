@@ -2,7 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.8 |
+| Document version | 1.9 |
+| Changes in 1.9 | **REVIEW-4 reversed.** Each Review tab now carries an add button that creates an Item of that tab's kind — reviewing a list is when the next thing to capture comes to mind, and going back to Home to do it breaks the review. The old rule's remaining true parts (no subtask creation here; `"Make Task"` is not an add button) move to REVIEW-5, and REVIEW-6 keeps Home as the path NFR-2 is measured against. §5.1's map updated. |
 | Changes in 1.8 | §11.13.1's table listed M4–M5's widget and golden tests as headless-verifiable but never named *launching the app*, so a literal reader could take all of M4–M5 to be container-verifiable. Added to the hardware column. |
 | Changes in 1.7 | §11.13: **M4 and M5 now run as one session with a commit at each.** The old boundary cut through shared files rather than between them — §5.3 and §5.4 make Add and Edit the same screens in different modes, and three of M4's own affordances (ROW-3, TODO-6, REVIEW-1) point at M5's screens. The work is now sequenced by shared component rather than by user journey. |
 | Changes in 1.6 | §11.5.1's table list still named the `tags` / `item_tags` pair that v1.5 replaced three lines below it (D-M3-16). Corrected to `idea_tags` and `task_tags`. |
@@ -314,6 +315,8 @@ Review [To Do tab]  ── tap task text ──▶ Edit Task
 Review [Ideas tab]  ── tap idea text ──▶ Edit Idea ──("Create Task")──▶ Create Task (from Idea)
                     ── "Make Task" ─────────────────────────────────▶ Create Task (from Idea)
                        (Create Task: confirm ▸ To Do tab; cancel ▸ Ideas tab)
+Review [To Do tab]  ── + button ───────▶ Add Task  ──(save/cancel)──▶ To Do tab
+Review [Ideas tab]  ── + button ───────▶ Add Idea  ──(save/cancel)──▶ Ideas tab
 Review (either tab) ── search icon ────▶ Search
 Review / Settings / Add / Edit ── Back ─▶ previous screen
 ```
@@ -361,7 +364,17 @@ The screen has three modes with the same layout: Add, Edit, and Convert (pre-fil
 - **REVIEW-1.** The top bar has a back arrow, two tabs `"To Do"` and `"Ideas"`, a search icon and the settings gear.
 - **REVIEW-2.** The default tab when entering from Home is `"To Do"`.
 - **REVIEW-3.** An empty To Do tab shows `"Nothing to do. Add a task from the home screen."` An empty Ideas tab shows `"No ideas yet."`
-- **REVIEW-4.** The Review screen is for reviewing, completing and processing what already exists. It offers no way to author a new Item from blank: no add-task button, no add-idea button, no add-subtask button. Capture happens on the Home screen. The one creation-adjacent affordance is `"Make Task"` (IDEAS-6), which processes an existing Idea rather than authoring a new Item, and which still opens the full Create Task screen for confirmation.
+- **REVIEW-4 (adding from a list).** Each tab carries an **add button** that creates an Item of that tab's kind: on the To Do tab it opens Add Task, on the Ideas tab it opens Add Idea, both in the Add mode of the screens in §5.3 and §5.4. Reviewing a list is when the next thing to capture most often comes to mind, and returning to Home to do it breaks the review.
+
+  - It is a floating action button in the bottom-right of the list area, showing a `+` icon, with the accessibility label `"Add task"` or `"Add idea"` according to the tab.
+  - It does **not** pre-fill anything from the list's current state. An Idea added from the Ideas tab takes `settings.defaultIdeaTimeframe` exactly as one added from Home does, whichever groups happen to be expanded. There is no "current group".
+  - On save, and on cancel or back, the app returns to **the tab the button was pressed from**, not to Home.
+  - The list MUST reserve bottom padding at least the button's height plus its margin, so the button never covers the last row or TODO-6's `"Archived tasks"` link.
+  - On desktop the button is present and focusable, but `Ctrl+T` and `Ctrl+I` (HOME-5) already do the same thing from anywhere, so it is primarily a touch affordance.
+
+- **REVIEW-5 (what the Review screen still does not do).** Subtasks cannot be created here: they belong only to the Create/Edit Task screen (SUB-9, TASKFORM-2). `"Make Task"` (IDEAS-6) is not an add button either — it processes an existing Idea, and still opens the full Create Task screen for confirmation.
+
+- **REVIEW-6.** The Home screen remains the fastest capture path and the one NFR-2 is measured against: two taps from a cold start. REVIEW-4's buttons are a convenience for when the user is already reviewing, and MUST NOT be treated as a reason to lengthen the Home path.
 
 ### 5.6 List item rendering (shared by both tabs)
 - **ROW-1.** The item name shows in full up to **4 lines**. Longer names are cut off with an ellipsis at the end of line 4.
