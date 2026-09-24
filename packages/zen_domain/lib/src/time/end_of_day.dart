@@ -153,3 +153,31 @@ DateTime instantOfLocalWallTime({
 /// [DateTime]. See [instantOfLocalWallTime] for what "carrier" means here.
 DateTime _wallClockAt(DateTime utc, String zoneId, TimeZoneRules zone) =>
     utc.add(zone.offsetAt(utc, zoneId));
+
+/// ARCH-1, AC-6. The logical day an instant falls in, as a local calendar date.
+///
+/// "Lists all Tasks with `isArchived == true` … grouped by the logical day they
+/// were completed" — and AC-6 fixes what that means: with EoD 02:00, a Task
+/// completed Tue 23:10 and one completed Wed 01:30 both belong to **Tuesday**,
+/// because both archive at the same Wed 02:00 boundary.
+///
+/// So the logical day of an instant is the date of the End-of-Day boundary it
+/// will cross, less one day: the day whose `endOfDay` closes it. Returns a
+/// [DateTime] in UTC used purely as a carrier for a wall-clock date, exactly as
+/// [instantOfLocalWallTime] takes one — its time-of-day components are zero and
+/// it is not an instant.
+DateTime logicalDayOf(
+  DateTime instantUtc,
+  LocalTime endOfDay,
+  String zoneId,
+  TimeZoneRules zone,
+) {
+  final DateTime boundary = archiveBoundaryAfter(
+    instantUtc,
+    endOfDay,
+    zoneId,
+    zone,
+  );
+  final DateTime wall = boundary.add(zone.offsetAt(boundary, zoneId));
+  return DateTime.utc(wall.year, wall.month, wall.day - 1);
+}

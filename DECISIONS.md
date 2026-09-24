@@ -69,9 +69,27 @@ Resolved by `flutter pub get` on 2026-09-23 and taken from `pubspec.lock`.
 `sqlite3_flutter_libs` is now published as **`0.6.0+eol`** — end of life, exactly
 as §11.2 predicted. Nothing here depends on it.
 
-Riverpod, `go_router`, `shelf`, `nsd`, `saf_util` and the rest of §11.2 are
-resolved at the milestone that first needs them (M4, M6, M7) and recorded here
-then, per §11.2.
+### `zen_app` (M4)
+
+Resolved by `flutter pub get` on 2026-09-23 and taken from `pubspec.lock`. Each
+was checked on pub.dev for its current version, null-safety and maintenance
+state, as §11.2 requires; all are null-safe and all published within the last
+four months.
+
+| Role | Package | Constraint | **Resolved** | Notes |
+|---|---|---|---|---|
+| State | `flutter_riverpod` | `^3.4.3` | **3.4.3** | §11.2's "3.x". Plain `Provider` / `StreamProvider`, no annotations and no build step, as §11.0 requires. Note that `Override` — the element type of `ProviderContainer.overrides` — is *not* in 3.x's public export list, so that list's type is inferred rather than written out. |
+| Routing | `go_router` | `^18.0.1` | **18.0.1** | |
+| Formatting | `intl` | `^0.20.3` | **0.20.3** | ARCH-1's date headers and the Advanced details panels (§11.2). |
+| Paths | `path_provider`, `path` | `^2.1.6`, `^1.9.1` | **2.1.6**, **1.9.1** | `getApplicationSupportDirectory` is where STORE-1's one database file lives. |
+| App metadata | `package_info_plus` | `^10.2.1` | **10.2.1** | SET-3's About row. |
+| Device metadata | `device_info_plus` | `^13.2.0` | **13.2.0** | D-M3-15's injected device name; the pairing screen (§11.6.4) will reuse it. |
+| Device time zone | `flutter_timezone` | `^5.1.0` | **5.1.0** | **Not in §11.2's table** — see D-M4-3. |
+| Database (test only) | `drift` | `^2.35.0` | **2.35.0** | A dev dependency: the widget tests build `NativeDatabase.memory()` directly rather than mocking the repositories (D-M4-15). |
+
+`file_selector`, `saf_util`, `shelf`, `http`, `cryptography`, `nsd`, `qr_flutter`
+and `mobile_scanner` are still unresolved: they are M6's and M7's, and §11.2 says
+to check each at the milestone that first needs it.
 
 ---
 
@@ -490,6 +508,172 @@ lines below it replaces with `idea_tags` and `task_tags`. The bullet is the one
 v1.5 rewrote and is what the schema implements; the list is an editorial
 leftover. `schema_test.dart` asserts that neither `tags` nor `item_tags` exists,
 so a future reader who follows the stale line will be told.
+
+## M4 — `zen_app` capture path
+
+**D-M4-1 — The platform folders are generated with `flutter create`, and its
+boilerplate is discarded.**
+D-M0-6 deferred `android/` and `windows/` to this milestone. They were created
+with `flutter create --platforms=windows,android --org dev.zen --overwrite .`,
+which also overwrote `pubspec.yaml` and `analysis_options.yaml` and wrote a
+`lib/main.dart`, a `test/widget_test.dart` and a `README.md`. The two config
+files were restored from git and the three boilerplate files deleted. The
+generated per-package `.gitignore` was deleted as well, and the handful of
+entries it added that the root one lacked were moved there, because two ignore
+files disagreeing is worse than one long one. `.metadata` is committed, as
+Flutter intends: `flutter create` and `flutter migrate` read it.
+
+One thing `flutter pub get` insists on: with platform folders present it rewrites
+`packages/zen_app/analysis_options.yaml` to exclude `android/**` and `windows/**`.
+Neither holds Dart, so the exclusion changes nothing, but it is re-added on every
+resolve — so it is committed rather than fought with.
+
+**D-M4-2 — The three Android API levels are written out, not inherited.**
+§11.2 fixes `compileSdk` 36, `targetSdk` 36 and `minSdk` 26. Flutter 3.47.5's own
+defaults are **36 / 36 / 24**, so a `minSdk` taken from `flutter.minSdkVersion`
+would silently be 24 — two API levels below the specification. All three are
+therefore literals in `android/app/build.gradle.kts` with a comment saying why,
+and a Flutter SDK upgrade cannot move them. The `release` build type still signs
+with the debug keystore, which M8 replaces (§11.9); the comment there says so, so
+that an APK built today is not mistaken for a release artifact.
+
+**D-M4-3 — `flutter_timezone` supplies the device's IANA zone.**
+EOD-5 computes boundaries "in the device's current local time zone", and
+§11.4.3's `TimeZoneRules` port takes an IANA zone id. Nothing in §11.2's table
+produces one: `DateTime.timeZoneName` gives a Windows display name or an
+abbreviation, neither of which `package:timezone` can look up. `flutter_timezone`
+5.1.0 supports Android and Windows and does exactly this one thing, so it is
+added under a role §11.2 did not anticipate. It is read once in `main.dart` and
+handed to `SystemClock`; if the platform call throws, the app starts in `UTC`
+rather than refusing to start, which is the posture §11.5.5 takes everywhere
+else. A wrong zone moves the End-of-Day boundary, so this is a last resort and
+not a default.
+
+**D-M4-4 — The database is opened before `runApp`, and `main.dart` is the
+composition root.**
+NAV-3 forbids a loading screen beyond platform minimums, so the alternative — a
+`FutureProvider` that every screen unwraps — would put a spinner in front of Home
+on every cold start and an `AsyncValue` in front of every widget. Instead
+`main.dart` opens the database, reads the settings once and resolves the zone,
+then overrides `databaseProvider`, `initialSettingsProvider`,
+`localZoneIdProvider` and `deviceNameProvider` on a `ProviderContainer`. Those
+four throw `UnimplementedError` if read un-overridden, which is Riverpod's idiom
+for "supplied by the composition root". `main.dart` is consequently the only file
+that touches `dart:io`, the only one that reads a clock, and the only one that
+asks the platform anything.
+
+`currentSettingsProvider` is what every screen reads: the live stream once it has
+emitted, and `main.dart`'s one-shot read until then, so the first frame already
+has the right theme.
+
+**D-M4-5 — `updateTask` joins `zen_domain`'s task rules.**
+M1 built the individual §4.2 and §4.3 rules, which is everything the To Do list
+needs, but the Edit Task screen saves name, status, tags, description and the
+whole subtask list at once. Chaining the individual rules cannot do that: an
+intermediate `Task` carrying the new status with the old subtasks violates INV-2,
+and `Task`'s constructor asserts. `updateTask` is therefore one call that checks
+NAME-8 against the Task's own name, checks TASKFORM-6's INV-2 condition against
+the *form's* subtask list, and constructs the result in one step. It is the exact
+shape `updateIdea` already had, and for the same stated reason: so the checks
+cannot be forgotten. §11.7 is what puts it in `zen_domain` rather than in the
+screen — "if a decision needs a test, it belongs in `zen_domain`".
+
+**D-M4-6 — A subtask row left blank is dropped on save, not refused.**
+TASKFORM-2 appends a row and focuses it; nothing in §5.4 says what happens if the
+user then saves without typing. Refusing the save would block on a row the user
+never meant to add. SUB-7 hard-deletes a subtask with no recovery, so discarding
+an empty row is the same outcome as the delete button that row already carries.
+The simplest behaviour consistent with §5.4 is therefore to drop it silently.
+
+**D-M4-7 — The completion circle is drawn as paths, not glyphs.**
+TODO-3 specifies a checkmark and a ✕, which an icon font would supply. §11.12
+requires golden tests for exactly these three states, and a golden containing a
+glyph depends on font rasterization, which differs between machines. Drawing both
+with `CustomPainter` removes that dependency — the goldens then rest on the
+rasterizer alone. The colours come from the active `DecorPack`, never from a
+literal, so DECOR-3's "a new const plus a registry line" holds for them too.
+
+**D-M4-8 — Golden tests run on Windows only.**
+§11.12 asks for goldens for TODO-3's three circle states and their disabled
+variants. Goldens are platform-sensitive, and `ci.yaml` runs on `ubuntu-latest`
+while the images can only be generated here. Rather than commit images that fail
+on the machine that checks every push, the golden test is skipped off Windows
+with the reason in the skip message. CI reports them as skipped;
+`tools/verify.ps1`, which is run before every commit, executes them. Once the
+workflow has run at least once, a second set can be generated on Linux with
+`--update-goldens` and selected by platform. Recorded as an open verification
+item below.
+
+**D-M4-9 — Two screens show controls for features that do not exist yet.**
+§11.5.5's recovery screen must offer `"Restore from backup…"` (§11.6.6) and
+`"Import snapshot…"` (§11.8), and SET-4 requires a `"Sync"` section holding
+§11.8's settings and actions. Every one of those belongs to `zen_sync`, which M6
+and M7 build. Both are rendered with their controls present and disabled, under
+one line saying sync is not built yet. Omitting them would read as a feature that
+was forgotten rather than one that is coming, and on the recovery screen in
+particular an absent button reads as "there is no way back", which is the
+opposite of what §11.5.5 wants that screen to say.
+
+**D-M4-10 — `TaskRepository.watchAll` and `IdeaRepository.activeNormalizedNames`
+were added to the interfaces.**
+SEARCH-2 filters Tasks on `Todo / Blocked / Done / Archived / Deleted`, and a
+soft-deleted Task appears in neither `watchActive` nor `watchArchived`. Without
+`watchAll` the Search screen would have to reach past the repository, which
+STORE-2 forbids. `activeNormalizedNames` already existed on
+`DriftIdeaRepository` but had never been declared on `IdeaRepository`, unlike its
+`TaskRepository` twin; NAME-8's live feedback on the Idea form needs it, so the
+asymmetry is closed rather than worked around.
+
+**D-M4-11 — Search matching and ARCH-1's day grouping live in `zen_domain`.**
+Both are decisions that need a test, which §11.7 puts in `zen_domain` rather than
+in a provider. `SearchQuery` (`search/search_query.dart`) holds SEARCH-1's
+matching and SEARCH-2's three filters; `logicalDayOf` sits beside
+`archiveBoundaryAfter` in `time/end_of_day.dart`. SEARCH-1 says "case-insensitive
+substrings", and the normalization it uses is §2's — the same one NAME-5 uses —
+so a search for `buy  MILK` finds `Buy milk`, and accent composition does not
+change the result.
+
+`logicalDayOf` is derived rather than chosen: AC-6 fixes that a Task completed
+Tue 23:10 with EoD 02:00 appears "under Tuesday", and so does one completed Wed
+01:30, because both cross the same Wed 02:00 boundary. The logical day of an
+instant is therefore the date of the boundary it will cross, less one day.
+
+**D-M4-12 — A name field that opens with text in it shows its message at once.**
+IDEAFORM-2 delays validation messages until "the user has typed and then paused
+or blurred the field", so that a message does not accuse the user mid-word. A
+name the screen arrived with — Edit mode's stored name, or CONVERT-1's pre-fill —
+has already settled, and CONVERT-3's colliding pre-fill would otherwise disable
+the confirm button with no explanation on screen, which NAME-8's "an inline
+message is shown" does not allow. The delay therefore applies only to a field
+that started empty.
+
+**D-M4-13 — `ArchiveScheduler` reschedules after every sweep.**
+EOD-3's three triggers are app start, foreground, and each boundary while the app
+runs. The third is a `Timer` set from `ArchiveSweeper.nextBoundaryAfter`, re-armed
+after every sweep rather than set once on a fixed period. That is what makes
+EOD-4 work without extra machinery: changing `settings.endOfDay` moves the next
+boundary, and the timer is derived from the setting each time it is set. The
+delay is floored at one second, because `nextBoundaryAfter` is only guaranteed to
+be *strictly* after the instant it is given, and a one-millisecond timer could
+re-fire before the sweep that set it had committed.
+
+**D-M4-14 — Widget tests read Drift streams through `runAsync`.**
+`testWidgets` runs its body against a fake clock. A Drift stream's first emission
+is scheduled on a timer the fake clock never fires while the test body is merely
+awaiting, so `await repository.watchAll().first` hangs until the test times out —
+a failure mode worth naming, because it presents as the screen being broken. The
+harness's `readStream` wraps that one await in `tester.runAsync`. Plain futures
+(`findById` and friends) need none of it.
+
+**D-M4-15 — The widget tests run against a real in-memory database.**
+§11.13.1 puts M4 and M5's widget tests in the headless column, and
+`NativeDatabase.memory()` needs no device. Faking the repositories would prove
+only that a screen agrees with the fake: the rules the screens call are
+`zen_domain`'s and are already tested there, and the constraints that actually
+guarantee them are `zen_data`'s. So the tests drive the real screens over the
+real schema and assert against what was persisted.
+
+---
 
 ## Verification status (§11.13.1)
 

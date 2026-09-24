@@ -30,6 +30,13 @@ abstract interface class IdeaRepository {
   /// [normalized], or `null`. Used to render the `"Open it"` link.
   Future<Idea?> findActiveByNormalizedName(String normalized);
 
+  /// §2, NAME-6. The normalized names of every Idea, which is what the rules
+  /// in `rules/idea_rules.dart` take.
+  ///
+  /// Every Idea is active: DEL-3 removes a deleted one outright rather than
+  /// flagging it (INV-7), so unlike Tasks there is no inactive set to exclude.
+  Future<Set<String>> activeNormalizedNames();
+
   /// CREATE-1, CREATE-4. Persists a new Idea durably before returning.
   ///
   /// Returns [IdeaNameCollision] if the name is taken, whether the application
@@ -50,6 +57,15 @@ abstract interface class TaskRepository {
 
   /// ARCH-1. Archived, not deleted, newest first.
   Stream<List<Task>> watchArchived();
+
+  /// SEARCH-2. Every Task this replica holds, including archived and
+  /// soft-deleted ones, oldest first.
+  ///
+  /// Search filters on `Todo / Blocked / Done / Archived / Deleted`, and a
+  /// soft-deleted Task appears in no other stream — so without this the Search
+  /// screen would have to reach past the repository, which STORE-2 forbids.
+  /// Filtering is `SearchQuery`'s (§5.10); this is only the source.
+  Stream<List<Task>> watchAll();
 
   /// Returns the Task with [id], or `null`.
   Future<Task?> findById(String id);

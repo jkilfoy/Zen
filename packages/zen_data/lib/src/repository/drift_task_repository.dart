@@ -58,6 +58,17 @@ final class DriftTaskRepository implements TaskRepository {
   );
 
   @override
+  Stream<List<Task>> watchAll() => _watch(
+    // SEARCH-2. No `where` at all: archived and soft-deleted Tasks are exactly
+    // what two of the filter's five states select on.
+    where: (Tasks t) => const Constant<bool>(true),
+    order: <OrderingTerm>[
+      OrderingTerm.asc(_db.tasks.createdAt),
+      OrderingTerm.asc(_db.tasks.id),
+    ],
+  );
+
+  @override
   Future<Task?> findById(String id) async {
     final TaskRow? row = await (_db.select(
       _db.tasks,

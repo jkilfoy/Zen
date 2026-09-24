@@ -35,3 +35,17 @@ key.properties
 # Local run logs (e.g. verify.ps1 output redirected to a file).
 tools/result.txt
 tools/*.log
+
+# Flutter's generated platform folders (packages/zen_app/{android,windows}),
+# created in M4. Their build output that the Dart/Flutter block above does not
+# already cover.
+packages/zen_app/android/app/debug/
+packages/zen_app/android/app/profile/
+packages/zen_app/android/app/release/
+packages/zen_app/android/.gradle/
+packages/zen_app/android/local.properties
+packages/zen_app/android/**/.cxx/
+migrate_working_dir/
+app.*.symbols
+app.*.map.json
+.widget_preview/

@@ -68,6 +68,7 @@ final class DriftIdeaRepository implements IdeaRepository {
   ///
   /// Feeds `checkNameAvailable` in the UI (NAME-8). The guarantee is the index,
   /// not this (§11.5.2).
+  @override
   Future<Set<String>> activeNormalizedNames() async {
     final List<IdeaRow> rows = await _db.select(_db.ideas).get();
     return rows.map((IdeaRow r) => r.nameNormalized).toSet();

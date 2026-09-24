@@ -12,6 +12,7 @@
 /// * `rules/` — the rules of §4, each returning a [Result].
 /// * `time/` — [Clock], [LocalTime], [TimeZoneRules], the End-of-Day calculator,
 ///   and §3's millisecond-precision rule.
+/// * `search/` — §5.10's matching and filters.
 /// * `ids/` — [IdGenerator].
 /// * `repository/` — interfaces only; `zen_data` implements them.
 /// * `result.dart` — [Result] and every [RuleViolation].
@@ -49,6 +50,7 @@ export 'src/rules/idea_rules.dart';
 export 'src/rules/name_rules.dart';
 export 'src/rules/subtask_rules.dart';
 export 'src/rules/task_rules.dart';
+export 'src/search/search_query.dart';
 export 'src/time/clock.dart';
 export 'src/time/end_of_day.dart';
 export 'src/time/instant_precision.dart';

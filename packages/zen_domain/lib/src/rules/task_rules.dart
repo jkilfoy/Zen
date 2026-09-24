@@ -245,3 +245,87 @@ Result<Task, RuleViolation> _guardReactivation(
   }
   return Ok<Task, RuleViolation>(candidate);
 }
+
+/// §4.1, §4.2, NAME-8, TASKFORM-3, TASKFORM-6. Applies an Edit Task screen's
+/// save to an existing Task.
+///
+/// Every field the form offers (TASKFORM-1) in one call, so that the name
+/// check, the INV-2 check and the `updatedAt` bump cannot be forgotten — the
+/// same shape as `updateIdea`, and for the same reason. NAME-8's "renaming an
+/// Item to its own current name is not a collision" is handled by passing the
+/// Task's own normalized name through.
+///
+/// TASKFORM-6: "Save is blocked with the incomplete-subtasks popup whenever the
+/// form's status is `Done` and any subtask's status is not `Done`." The check
+/// runs against [subtasks] — the list as the form has it, not as the Task has
+/// it — because the user may have added one since the status was set.
+///
+/// The result is constructed in one step rather than by chaining `copyWith`
+/// and [Task.withStatus]: an intermediate Task carrying the new status with the
+/// old subtasks, or the reverse, can violate INV-2, and [Task]'s constructor
+/// asserts. [subtasks] is the whole list, already materialized by the caller;
+/// the individual add, rename, delete and reorder rules in `subtask_rules.dart`
+/// are what the To Do list and the editor's own affordances use.
+Result<Task, RuleViolation> updateTask(
+  Task task, {
+  required DateTime now,
+  ItemName? name,
+  TaskStatus? status,
+  Iterable<Tag>? tags,
+  ItemText? description,
+  List<Subtask>? subtasks,
+  Set<String> activeTaskNormalizedNames = const <String>{},
+}) {
+  final RuleViolation? blocked = editabilityViolation(task);
+  if (blocked != null) {
+    return Err<Task, RuleViolation>(blocked);
+  }
+
+  if (name != null) {
+    final Result<ItemName, RuleViolation> available = checkNameAvailable(
+      name: name,
+      kind: ItemKind.task,
+      activeNormalizedNames: activeTaskNormalizedNames,
+      selfNormalizedName: task.name.normalized,
+    );
+    if (available case Err<ItemName, RuleViolation>(
+      :final RuleViolation error,
+    )) {
+      return Err<Task, RuleViolation>(error);
+    }
+  }
+
+  final List<Subtask> nextSubtasks = subtasks ?? task.subtasks;
+  final TaskStatus nextStatus = status ?? task.status;
+  if (nextStatus == TaskStatus.done &&
+      !nextSubtasks.every((Subtask s) => s.status == TaskStatus.done)) {
+    return const Err<Task, RuleViolation>(IncompleteSubtasks());
+  }
+
+  return Ok<Task, RuleViolation>(
+    Task(
+      id: task.id,
+      name: name ?? task.name,
+      tags: tags == null ? task.tags : dedupeTags(tags),
+      description: description ?? task.description,
+      status: nextStatus,
+      subtasks: nextSubtasks,
+      createdAt: task.createdAt,
+      updatedAt: now,
+      // INV-1. A status that did not change keeps the instant it was completed
+      // at; one that just became `Done` is completed now; anything else has no
+      // completion instant at all.
+      completedAt: switch (nextStatus) {
+        TaskStatus.done when nextStatus == task.status => task.completedAt,
+        TaskStatus.done => now,
+        TaskStatus.todo || TaskStatus.blocked => null,
+      },
+      isArchived: task.isArchived,
+      archivedAt: task.archivedAt,
+      isDeleted: task.isDeleted,
+      deletedAt: task.deletedAt,
+      sourceIdeaId: task.sourceIdeaId,
+      sourceIdeaCreatedAt: task.sourceIdeaCreatedAt,
+    ),
+  );
+}
