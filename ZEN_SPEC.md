@@ -2,7 +2,9 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.6 |
+| Document version | 1.8 |
+| Changes in 1.8 | §11.13.1's table listed M4–M5's widget and golden tests as headless-verifiable but never named *launching the app*, so a literal reader could take all of M4–M5 to be container-verifiable. Added to the hardware column. |
+| Changes in 1.7 | §11.13: **M4 and M5 now run as one session with a commit at each.** The old boundary cut through shared files rather than between them — §5.3 and §5.4 make Add and Edit the same screens in different modes, and three of M4's own affordances (ROW-3, TODO-6, REVIEW-1) point at M5's screens. The work is now sequenced by shared component rather than by user journey. |
 | Changes in 1.6 | §11.5.1's table list still named the `tags` / `item_tags` pair that v1.5 replaced three lines below it (D-M3-16). Corrected to `idea_tags` and `task_tags`. |
 | Changes in 1.5 | Eleven findings from the M3 agent's pre-implementation review, all accepted. **§3: millisecond precision is exact, not a floor** — Drift's default stores whole seconds, which would have manufactured `updatedAt` ties and reverted renames through §9.3 step 4, and mixed-width ISO text sorts non-chronologically. **§3.7 gains INV-8** (the `sourceIdea` pair) **and INV-9** (timestamp precision). **§11.5.1 replaces the shared `tags` / polymorphic `item_tags` pair with per-kind `idea_tags` and `task_tags`**, which can express TAG-4 and can carry a real cascading foreign key. **§11.5.2** adds `CHECK`s for INV-5, INV-8 and INV-9, gives INV-2 and INV-7 triggers instead of a repository-only check, pins ISO-8601 text storage, and specifies attempt-and-translate over pre-checking. **EOD-2A**: archiving no longer moves `updatedAt`. **§11.5.4**: the sweep takes its time inputs explicitly. **§11.4.6**: `EventLog` gains `prune`. **§11.6.5**: a merge is applied by wholesale replacement, never row by row. |
 | Changes in 1.4 | Ten findings from the M2 agent's pre-implementation review of §9.3, all accepted. **§9.1 gains MERGE-3A**, distinguishing the set-valued collections (`ideas`, `tasks`, `tombstones`, emitted sorted by `id`) from the genuinely ordered ones (`subtasks`, `tags`). **§9.3 is rewritten**: record order is defined instead of the unusable "sorted by `id`"; tombstones are deduplicated per Idea; **subtask matching is by `id` first and by name-position only as a fall-back**, which fixes a silent data-loss bug where a renamed subtask collapsed two distinct subtasks into one; `archivedAt` and `deletedAt` are conditional on their flags (INV-4); the `sourceIdea` fields resolve as a pair; subtask `completedAt` and list order are specified; and step 6's termination argument is corrected. §9.4 now records that `Done`, `isDeleted` and `isArchived` are all sticky, not just `Done`. |
@@ -1059,6 +1061,20 @@ Beyond NFR-5:
 
 Each milestone ends with green tests, a commit and an updated `DECISIONS.md`. Do not begin a milestone before the previous one is green.
 
+**M4 and M5 are executed together, in one session, with a commit at each.** Their IDs stay distinct so that `DECISIONS.md` and the commit history keep referring to the same things, but the boundary between them is not a place to stop and hand over. It cuts through shared files rather than between them:
+
+- §5.3 and §5.4 say the Add and Edit screens are **the same screens in different modes**. Splitting means building `SCR-IDEA-FORM` and `SCR-TASK-FORM`, then re-opening both to add a mode, a panel and two actions — rework on the two largest files in the layer.
+- Three affordances on M4's own screens point at M5's: ROW-3's row tap opens the Edit screen, TODO-6's link opens Archived Tasks, and REVIEW-1's top bar carries a search icon and a settings gear. Splitting means writing stubs and then deleting them.
+- Archived Tasks and Search are mostly §5.6's row rendering re-used, so they are cheap once the lists exist, and expensive to retrofit if the row widget was built without them in view.
+- M4 alone is demoable but not *usable*: nothing can be edited or deleted. The usual reason to cut a milestone here — shipping a usable increment sooner — does not apply.
+
+Sequence the work by **shared component** rather than by user journey:
+
+1. **Foundation** — theme and the `Basic` decor pack, the router, the provider wiring, the row rendering of §5.6, the completion circle of TODO-3.
+2. **The two form screens**, with all five modes at once (Add, Edit; Add, Edit, Convert).
+3. **The two lists**, To Do and Ideas. *Commit: M4.*
+4. **Archived Tasks, Search and Settings**, which reuse step 1's rendering. *Commit: M5.*
+
 | # | Milestone | Definition of done |
 |---|---|---|
 | **M0** | Repository skeleton: four packages, path dependencies, lints, CI, `.fvmrc`, README | `dart analyze` and an empty test suite pass in CI |
@@ -1079,9 +1095,10 @@ The implementing agent may be running in a **Linux container with no Windows mac
 |---|---|
 | M0–M2 entirely (`dart test`, pure Dart) | The Android SAF folder path in M6 — scoped storage, `ACTION_OPEN_DOCUMENT_TREE`, persisted grants, and grant revocation behave only on a real device |
 | M3 (Drift runs on Linux; use an in-memory or temp-file database) | M7 end-to-end: mDNS discovery across two hosts, Windows Firewall prompts, Wi-Fi drop-outs, real QR scanning |
-| M4–M5 widget and golden tests (`flutter test` is headless) | M8 entirely: the Windows build needs Windows plus the VS 2022 C++ toolchain; the signed APK needs a keystore and a device to install on |
+| M4–M5 widget and golden tests (`flutter test` is headless) | **Launching the app** on Windows and on an Android device — M4's "runs on both platforms" is not established by widget tests, and this is the first milestone where that applies |
 | M6 merge, orchestrator, backup, and the file transport against ordinary directories | Cold-start latency against NFR-2, which is a claim about a mid-range Android phone |
-| The convergence simulation (§11.12, item 3), which is pure Dart and needs no device | Anything described as "feels fast" or "looks right" |
+| The convergence simulation (§11.12, item 3), which is pure Dart and needs no device | M8 entirely: the Windows build needs Windows plus the VS 2022 C++ toolchain; the signed APK needs a keystore and a device to install on |
+| | Anything described as "feels fast" or "looks right" |
 
 **Instructions for the agent.**
 - Build everything in the left column and prove it with tests before touching the right column.
