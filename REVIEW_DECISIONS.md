@@ -51,163 +51,112 @@ out to be wrong on a real screen.
 
 ## B1 — no way Home after an add, save or convert
 
-**Not implemented — proposal below, awaiting the owner's decision.**
+**R-B1-1 — Every route is nested under Home.**
+The route table declared all ten routes as flat siblings. `push` stacks a page
+on what is there; `go` does not — it rebuilds the stack from the hierarchy the
+target matches. Flat, `/review` matched one route and produced a stack of
+exactly one page, so Home was discarded: no back arrow, and on Android the
+system Back fell through to the launcher, which NAV-1 forbids. `go` was still
+the right verb at all six call sites — `push` would leave the finished form
+underneath for Back to walk into — so the fix was the table, not the verbs.
 
-### Why it happens
+The nine routes are now children of `/`. Child paths carry no leading slash;
+every location string `Routes` produces is unchanged, so nothing outside
+`router.dart` moved. `go('/review')` matches `/` and `review` and builds
+`[Home, Review]`.
 
-The route table in `router.dart` declares all ten routes as **flat siblings**.
-Nothing is nested under `/`.
+**Two risks were raised against this before it was implemented. Both were
+settled by test rather than by argument.**
 
-That matters because of how the two navigation verbs differ. `push` puts a page
-on top of the existing stack — Home ▸ Review gives `[Home, Review]`, so the
-`AppBar` finds something to pop and draws a back arrow. `go` does not push: it
-*rebuilds the whole stack* from the route hierarchy that the target location
-matches. With flat routes, `/review` matches exactly one route, so the stack it
-produces is `[Review]` and nothing else. Home is discarded.
+*Does `push` append the whole matched branch?* If it did, pushing an Edit screen
+from Review would give `[Home, Review, Home, Edit]` — which displays correctly,
+so only a count would catch it. It does not: go_router 18.0.1 pushes the leaf
+alone. `navigation_test.dart` asserts `inStack<HomeScreen>() == 1` after the
+push, and walks Back down to Home one page at a time, so a future version
+changing this semantics fails loudly rather than leaking pages.
 
-Every path B1 names ends in `go`:
+*Does `go` bypass NAV-1's discard prompt?* It cannot, because the prompt does
+not hang off `go`. `PopScope` intercepts the *pop attempt*; the `go` runs only
+after `confirmDiscard` has returned true. The six save-path `go`s have nothing
+to discard by definition. CONVERT-5's cancel does — and it was already covered
+by `convert_test.dart`'s AC-12. Probing it, however, turned up a different
+defect in the same place: see R-B1-2.
 
-| Call site | Rule |
-|---|---|
-| `idea_form_screen.dart:145` | IDEAFORM-4, after add |
-| `idea_form_screen.dart:162` | IDEAFORM-5, after delete |
-| `task_form_screen.dart:250` | TASKFORM-8, after add, save or convert |
-| `task_form_screen.dart:298` | TASKFORM-8, after delete |
-| `task_form_screen.dart:317` | ARCH-3 / SEARCH-3, after unarchive or restore |
-| `task_form_screen.dart:536` | CONVERT-5, after cancel |
+**R-B1-2 — Convert mode always intercepts the pop.**
+Found while checking the question above, not reported. `PopScope` was
+configured `canPop: !_dirty`, so a form the user had *not* edited popped
+natively — returning to whatever pushed it. From `"Make Task"` that is the Ideas
+tab and looks right. From Edit Idea (IDEAFORM-5) it is the Edit Idea screen,
+which puts the user back inside the Idea they just declined to convert.
 
-`go` was the right call and still is — the alternative, `push`, would leave the
-just-completed form underneath, so Back would return the user to the Add screen
-they had already finished with. The defect is not the verb. It is that the route
-table gives `go` nothing to rebuild *onto*.
+CONVERT-5 is explicit: "The app returns to the **Ideas tab**, from either entry
+point." Convert mode now sets `canPop: false` unconditionally and routes both
+cases — pristine and edited — through the same exit, prompting only when there
+is something to discard. The Ideas-tab destination no longer depends on which
+screen happened to push the form.
 
-This also explains why the symptom is worse on Android than on Windows: with a
-single-entry stack there is nothing to pop, so the system Back button falls
-through to the launcher and the app exits — which NAV-1 forbids in as many
-words.
-
-### Proposed fix
-
-Nest every route under `/` as a child route, changing only the route table:
-
-```dart
-GoRoute(
-  path: '/',
-  builder: … HomeScreen …,
-  routes: <RouteBase>[
-    GoRoute(path: 'review',            …),
-    GoRoute(path: 'idea/new',          …),
-    GoRoute(path: 'idea/:id',          …),
-    GoRoute(path: 'task/new',          …),
-    GoRoute(path: 'task/new/from/:id', …),
-    GoRoute(path: 'task/:id',          …),
-    GoRoute(path: 'archive',           …),
-    GoRoute(path: 'search',            …),
-    GoRoute(path: 'settings',          …),
-  ],
-),
-```
-
-Child paths lose their leading `/`; every location string stays exactly as it is
-(`/review`, `/task/new`), so nothing outside this file changes and `Routes`
-keeps its current shape.
-
-`go('/review')` then matches `/` **and** `review`, and builds `[Home, Review]`.
-The back arrow appears, Android's Back returns to Home, and the finished form is
-still gone from the stack. Every other `go` gains Home beneath it for the same
-reason.
-
-**What I like about it:** it is a change to one file, it needs no new widget and
-no special-casing per screen, and it makes the structure say what §5.1's
-navigation map already draws — Home is the root, everything hangs off it. A
-"Home" button bolted onto the Review app bar would paper over the same defect
-while leaving Android's Back still exiting the app.
-
-**What to weigh:** deep links and `go` calls to an *Edit* screen would also get
-`[Home, Edit]` rather than `[Home, Review, Edit]`, so Back from an Edit screen
-reached that way lands Home rather than on the list. Nothing in the app does
-that today — Edit screens are always reached with `push` from a list, which
-keeps the list underneath — so it is a latent property rather than a live
-behaviour change. The alternative, nesting the Edit routes under `review`
-instead of under `/`, buys a more precise stack at the cost of a route table
-that no longer mirrors §5.1's flat map.
-
-**Tests it would come with:** one per entry point in the table above, asserting
-that Review can pop and that what it pops to is Home. These are the cases that
-regressed unnoticed, so they should be pinned rather than eyeballed.
+Two tests cover it, one per entry point, plus a third for the edited form. The
+pristine-from-Edit-Idea case is the one that was broken, and it failed on first
+run before the fix, which is the only real evidence a test was worth writing.
 
 ---
 
-## B3 — Add Task / Add Idea at the foot of each list
+## B3 — an add button on each Review tab
 
-**Not implemented — blocked, and not only on B1.**
+**R-B3-1 — Built to REVIEW-4 as rewritten in v1.9, not to the report.**
+B3 asked for a button at the foot of each list — above TODO-6's link on the To
+Do tab, below `Distant` on the Ideas tab. The owner's rewrite specifies a
+**floating action button** in the bottom-right instead. Where the report and the
+specification disagree the specification wins, so that is what was built. The
+FAB also sidesteps what the report's placement would have cost: a button in the
+list flow scrolls away exactly when a long list makes it most useful, and on the
+Ideas tab it would have had to sit below four collapsible groups whose combined
+height changes as they open.
 
-Two things need settling first.
+The button is `push`ed, not `go`ne to. REVIEW-4 requires save *and* cancel to
+return to "the tab the button was pressed from", and pushing keeps this very
+`ReviewScreen` underneath — with its tab selection and its scroll position
+intact — so cancel needs no navigation logic of its own. The save paths land
+back on the right tab through IDEAFORM-4 and TASKFORM-8, which already did that.
 
-**REVIEW-4 currently forbids exactly this.** §5.5: *"The Review screen is for
-reviewing, completing and processing what already exists. It offers no way to
-author a new Item from blank: no add-task button, no add-idea button, no
-add-subtask button. Capture happens on the Home screen."* The rule then goes out
-of its way to explain why `"Make Task"` is the one permitted exception —
-"which processes an existing Idea rather than authoring a new Item". That is a
-deliberate product decision with a stated rationale, not an oversight, and
-`todo_list_test.dart` has a test named for it that B3 will turn red.
+`ReviewScreen.fabClearance` is 88: REVIEW-4 requires "at least the button's
+height plus its margin", which for a Material FAB is 56 + 16 = 72. The tabs
+apply it as bottom padding, because the requirement is about the *list* not
+being covered, and the lists are what own their padding.
 
-I am not going to quietly override a numbered requirement. B3 is a change to
-`ZEN_SPEC.md` — REVIEW-4 amended or removed, with the version bumped — and then
-an implementation. Which way you want that written is yours to decide; it is
-your specification.
-
-**It also depends on B1.** B3's acceptance says the user must still be able to
-reach Home after adding or backing out, which is precisely what B1 fixes. The
-buttons themselves are a few lines and need nothing from B1, but their stated
-behaviour is not satisfiable until B1 lands, so shipping them first would mean
-claiming an item done while half of it is false.
-
-Once REVIEW-4 is settled and B1 is agreed, this is a small change:
-`push(Routes.addTask)` from the To Do tab and `push(Routes.addIdea)` from the
-Ideas tab. Both already return to Review on save through the existing
-IDEAFORM-4 / TASKFORM-8 paths, and `push` means backing out returns to Review
-too — so no new navigation logic is needed, only the two buttons.
+The FAB is rebuilt from a `TabController` listener rather than only on tab
+change, so it swaps during a swipe rather than snapping at the end of one.
 
 ---
 
 ## B5 — `"Make Task"` crowds the Idea text
 
-**Not implemented — options below, awaiting the owner's choice.**
+**R-B5-1 — Option 4: a `TextButton`, 8 dp padding, `labelMedium`.**
+Chosen by the owner from the options costed below. The width came out of the
+chrome rather than the words, because IDEAS-6 fixes the label as the exact
+string `"Make Task"` and §11.13's standing instruction is to reproduce specified
+copy verbatim. Dropping the outline as well as the padding leaves the row
+quieter, which is the other half of what B4 was after on the same screen.
 
-### Where the width goes
+ROW-5's floors are unchanged and still asserted: a 48 × 48 touch target and
+16 dp of clear space. Those two put a hard ceiling of roughly 84% on the wrap
+point no matter what the button says, so the measured target was the top of the
+owner's stated range rather than beyond it. `convert_test.dart` asserts the text
+region is now more than 70% of the row and that both floors hold — a range
+rather than a pixel count, since the exact width depends on the font the
+platform resolves.
 
-The button is an `OutlinedButton` with Material 3's default 24 dp horizontal
-padding on each side, its label at `labelLarge` (14sp), inside a 48 × 48 minimum
-touch target, with ROW-5's 16 dp gap before it. On your phone's 411 dp width
-that comes to roughly 140 dp, or **34%** — which matches the 35% you measured.
-
-**Two floors cannot move**, both from ROW-5: the touch target is at least
-48 × 48 dp, and the gap is at least 16 dp. 64 dp of 411 is 15.6%, so **the wrap
-point can never exceed about 84%** while ROW-5 stands. 75% is comfortably
-reachable; 80% is reachable only by making the button itself no wider than its
-touch target, which means dropping the words.
-
-### Options
+### The options as costed
 
 | # | Change | Approx. row width | Wrap at | Keeps IDEAS-6? |
 |---|---|---|---|---|
 | 1 | Horizontal padding 24 → 8 | ~108 dp | ~74% | Yes |
-| 2 | Label `labelLarge` → `labelMedium` (14 → 12sp) | ~126 dp | ~69% | Yes |
-| 3 | **1 + 2 together** | ~94 dp | **~77%** | Yes |
-| 4 | 3, plus `TextButton` instead of `OutlinedButton` — drops the outline, lighter on the eye | ~94 dp | ~77% | Yes |
-| 5 | Icon only, e.g. `→`, with the tooltip and accessibility label kept | ~64 dp | ~84% | **No** |
-| 6 | Reword to `"Task"` or `"+ Task"` | ~80 dp | ~80% | **No** |
+| 2 | Label `labelLarge` → `labelMedium` | ~126 dp | ~69% | Yes |
+| 3 | 1 + 2 together | ~94 dp | ~77% | Yes |
+| **4** | **3, plus `TextButton` — drops the outline** | **~94 dp** | **~77%** | **Yes** |
+| 5 | Icon only | ~64 dp | ~84% | No |
+| 6 | Reword to `"Task"` | ~80 dp | ~80% | No |
 
-**My recommendation is 3**, or 4 if you want the row quieter still. It reaches
-the bottom of your stated range without touching the specification, and the
-button keeps a real label, which matters for a control whose whole job is to be
-found by someone processing a list.
-
-**5 and 6 need a spec change.** IDEAS-6 fixes the label as the exact string
-`"Make Task"`, and the standing instruction in §11.13 is to reproduce specified
-copy verbatim. An icon also costs discoverability on the one affordance that
-turns an Idea into a Task — the central verb of the product — and no tooltip
-recovers that on a touch screen, where nothing hovers. If you want 80%+, say so
-and I will amend IDEAS-6 rather than work around it.
+5 and 6 were not taken and would need IDEAS-6 amended. An icon also costs
+discoverability on the one affordance that turns an Idea into a Task, and no
+tooltip recovers that on a touch screen, where nothing hovers.

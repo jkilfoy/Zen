@@ -228,7 +228,7 @@ void main() {
 
     final Rect region = tester.getRect(find.byKey(ItemRow.tapRegionKey).first);
     final Rect button = tester.getRect(
-      find.widgetWithText(OutlinedButton, 'Make Task'),
+      find.widgetWithText(TextButton, 'Make Task'),
     );
 
     // "to the left of the Make Task button for ideas", with ROW-5's 16 dp.
@@ -263,6 +263,79 @@ void main() {
       find.bySemanticsLabel('Make task from idea: Learn Rust'),
       findsOneWidget,
     );
+  });
+
+  group('REVIEW-4 (v1.9): the add button on the Ideas tab', () {
+    testWidgets('adds an Idea, and returns to the Ideas tab', (
+      WidgetTester tester,
+    ) async {
+      final ZenHarness harness = ZenHarness();
+      await openIdeas(tester, harness);
+
+      expect(find.byTooltip('Add idea'), findsOneWidget);
+      expect(find.byTooltip('Add task'), findsNothing);
+
+      await tester.tap(find.byTooltip('Add idea'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Name'),
+        'Read SICP',
+      );
+      await tester.pumpAndSettle();
+      await tapItem(tester, find.widgetWithText(FilledButton, 'Add Idea'));
+
+      expect(find.text('Read SICP'), findsOneWidget);
+      expect(find.byTooltip('Add idea'), findsOneWidget);
+    });
+
+    testWidgets('it pre-fills nothing from the list it was pressed on', (
+      WidgetTester tester,
+    ) async {
+      // REVIEW-4: "It does not pre-fill anything from the list's current
+      // state … There is no 'current group'." Distant is expanded here; the
+      // new Idea still takes settings.defaultIdeaTimeframe.
+      final ZenHarness harness = ZenHarness();
+      await seedIdea(
+        harness,
+        name: 'Someday thing',
+        timeframe: Timeframe.distant,
+      );
+      await openIdeas(tester, harness);
+      await tester.tap(find.text('Distant (1)'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Add idea'));
+      await tester.pumpAndSettle();
+      final SegmentedButton<Timeframe> picker = tester
+          .widget<SegmentedButton<Timeframe>>(
+            find.byType(SegmentedButton<Timeframe>),
+          );
+
+      expect(picker.selected, <Timeframe>{Timeframe.now});
+    });
+
+    testWidgets('B5: Make Task leaves the Idea name most of the row', (
+      WidgetTester tester,
+    ) async {
+      final ZenHarness harness = ZenHarness();
+      await seedIdea(harness, name: 'Read SICP');
+      await openIdeas(tester, harness);
+
+      final Rect region = tester.getRect(
+        find.byKey(ItemRow.tapRegionKey).first,
+      );
+      final Rect button = tester.getRect(
+        find.widgetWithText(TextButton, 'Make Task'),
+      );
+
+      // The row's usable text width, as a fraction of what the row occupies.
+      final double rowWidth = button.right - region.left;
+      expect(region.width / rowWidth, greaterThan(0.70));
+      // ROW-5's floors still hold.
+      expect(button.width, greaterThanOrEqualTo(48));
+      expect(button.height, greaterThanOrEqualTo(48));
+      expect(button.left - region.right, greaterThanOrEqualTo(16));
+    });
   });
 
   testWidgets('REVIEW-3: an empty Ideas tab', (WidgetTester tester) async {

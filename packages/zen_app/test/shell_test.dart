@@ -143,7 +143,7 @@ void main() {
       await tester.tap(find.text('Ideas'));
       await tester.pumpAndSettle();
 
-      final Finder buttons = find.widgetWithText(OutlinedButton, 'Make Task');
+      final Finder buttons = find.widgetWithText(TextButton, 'Make Task');
       expect(buttons, findsNWidgets(2));
 
       final Rect first = tester.getRect(buttons.first);

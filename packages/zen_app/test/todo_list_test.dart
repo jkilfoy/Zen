@@ -8,6 +8,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_app/src/router.dart';
+import 'package:zen_app/src/screens/home_screen.dart';
 import 'package:zen_app/src/widgets/completion_circle.dart';
 import 'package:zen_app/src/widgets/item_row.dart';
 import 'package:zen_domain/zen_domain.dart';
@@ -17,6 +18,10 @@ import 'support/harness.dart';
 /// Every completion circle on screen, in layout order: a Task's own circle,
 /// then its subtasks' (TODO-3, TODO-4).
 Finder get circles => find.byType(CompletionCircle);
+
+/// How many of [T] are in the stack, including pages hidden beneath the top.
+int inReviewStack<T extends Widget>() =>
+    find.byType(T, skipOffstage: false).evaluate().length;
 
 void main() {
   /// Opens the app on the To Do tab.
@@ -216,18 +221,78 @@ void main() {
     expect(find.text('Archived tasks'), findsOneWidget);
   });
 
-  testWidgets(
-    'REVIEW-4: the Review screen offers no way to author a new item',
-    (WidgetTester tester) async {
+  group('REVIEW-4 (v1.9): the add button on each tab', () {
+    testWidgets('the To Do tab adds a Task, and returns to that tab', (
+      WidgetTester tester,
+    ) async {
       final ZenHarness harness = ZenHarness();
-      await seedTask(harness, name: 'Something to do');
       await openTodo(tester, harness);
 
-      expect(find.byType(FloatingActionButton), findsNothing);
-      expect(find.text('Add task'), findsNothing);
-      expect(find.text('Add subtask'), findsNothing);
-    },
-  );
+      expect(find.byTooltip('Add task'), findsOneWidget);
+      expect(find.byTooltip('Add idea'), findsNothing);
+
+      await tester.tap(find.byTooltip('Add task'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(FilledButton, 'Add Task'), findsOneWidget);
+
+      await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Move');
+      await tester.pumpAndSettle();
+      await tapItem(tester, find.widgetWithText(FilledButton, 'Add Task'));
+
+      // "On save … the app returns to the tab the button was pressed from."
+      expect(find.text('Move'), findsOneWidget);
+      expect(find.byTooltip('Add task'), findsOneWidget);
+    });
+
+    testWidgets('cancelling returns to the tab it was pressed from', (
+      WidgetTester tester,
+    ) async {
+      final ZenHarness harness = ZenHarness();
+      await openTodo(tester, harness);
+
+      await tester.tap(find.byTooltip('Add task'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Add task'), findsOneWidget);
+      // B1 still holds from there: Home is underneath the Review screen.
+      expect(inReviewStack<HomeScreen>(), 1);
+    });
+
+    testWidgets('the button never covers the archive link of TODO-6', (
+      WidgetTester tester,
+    ) async {
+      final ZenHarness harness = ZenHarness();
+      for (int i = 0; i < 12; i++) {
+        await seedTask(
+          harness,
+          name: 'Task number $i',
+          createdAt: base.add(Duration(minutes: i)),
+        );
+      }
+      await openTodo(tester, harness);
+
+      // REVIEW-4's reserved clearance is what makes the link reachable rather
+      // than pinned under the button at the foot of a full list.
+      await tapItem(tester, find.text('Archived tasks'));
+      expect(find.text('Nothing archived yet.'), findsOneWidget);
+    });
+  });
+
+  testWidgets('REVIEW-5: the Review screen still authors no subtasks', (
+    WidgetTester tester,
+  ) async {
+    final ZenHarness harness = ZenHarness();
+    await seedTask(harness, name: 'Something to do');
+    await openTodo(tester, harness);
+
+    // REVIEW-5. "Subtasks cannot be created here: they belong only to the
+    // Create/Edit Task screen (SUB-9, TASKFORM-2)."
+    expect(find.text('Add subtask'), findsNothing);
+    // And `"Make Task"` is not an add button; it is not on this tab at all.
+    expect(find.text('Make Task'), findsNothing);
+  });
 
   testWidgets(
     'B2: tapping anywhere right of the completion circle opens Edit Task',

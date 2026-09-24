@@ -86,57 +86,75 @@ GoRouter buildRouter() => GoRouter(
   navigatorKey: rootNavigatorKey,
   initialLocation: Routes.home,
   routes: <RouteBase>[
+    // B1. Every route is a **child** of Home rather than a sibling of it, and
+    // that nesting is the whole of what makes Back work.
+    //
+    // `push` stacks a page on what is already there; `go` does not — it rebuilds
+    // the stack from the hierarchy the target location matches. While these were
+    // flat siblings, `go('/review')` matched one route and built a stack of
+    // exactly one page, so Home was discarded: no back arrow, and on Android the
+    // system Back fell through to the launcher, which NAV-1 forbids. Every path
+    // that lands on Review after finishing a form uses `go`, and must — `push`
+    // would leave the completed form underneath for Back to return to.
+    //
+    // Nested, `go('/review')` matches `/` *and* `review` and builds
+    // `[Home, Review]`. Nothing outside this file changed: the child paths carry
+    // no leading slash, but every location string `Routes` produces is the same
+    // as it was. `navigation_test.dart` pins both the depth and the contents of
+    // the resulting stack.
     GoRoute(
       path: Routes.home,
       builder: (BuildContext context, GoRouterState state) =>
           const HomeScreen(),
-    ),
-    GoRoute(
-      path: Routes.review,
-      builder: (BuildContext context, GoRouterState state) => ReviewScreen(
-        tab: ReviewTab.parse(state.uri.queryParameters['tab']),
-        highlight: state.uri.queryParameters['highlight'],
-      ),
-    ),
-    GoRoute(
-      path: Routes.addIdea,
-      builder: (BuildContext context, GoRouterState state) =>
-          const IdeaFormScreen.add(),
-    ),
-    GoRoute(
-      path: '/idea/:id',
-      builder: (BuildContext context, GoRouterState state) =>
-          IdeaFormScreen.edit(ideaId: state.pathParameters['id']!),
-    ),
-    GoRoute(
-      path: Routes.addTask,
-      builder: (BuildContext context, GoRouterState state) =>
-          const TaskFormScreen.add(),
-    ),
-    GoRoute(
-      path: '/task/new/from/:ideaId',
-      builder: (BuildContext context, GoRouterState state) =>
-          TaskFormScreen.convert(ideaId: state.pathParameters['ideaId']!),
-    ),
-    GoRoute(
-      path: '/task/:id',
-      builder: (BuildContext context, GoRouterState state) =>
-          TaskFormScreen.edit(taskId: state.pathParameters['id']!),
-    ),
-    GoRoute(
-      path: Routes.archive,
-      builder: (BuildContext context, GoRouterState state) =>
-          const ArchiveScreen(),
-    ),
-    GoRoute(
-      path: Routes.search,
-      builder: (BuildContext context, GoRouterState state) =>
-          const SearchScreen(),
-    ),
-    GoRoute(
-      path: Routes.settings,
-      builder: (BuildContext context, GoRouterState state) =>
-          const SettingsScreen(),
+      routes: <RouteBase>[
+        GoRoute(
+          path: 'review',
+          builder: (BuildContext context, GoRouterState state) => ReviewScreen(
+            tab: ReviewTab.parse(state.uri.queryParameters['tab']),
+            highlight: state.uri.queryParameters['highlight'],
+          ),
+        ),
+        GoRoute(
+          path: 'idea/new',
+          builder: (BuildContext context, GoRouterState state) =>
+              const IdeaFormScreen.add(),
+        ),
+        GoRoute(
+          path: 'idea/:id',
+          builder: (BuildContext context, GoRouterState state) =>
+              IdeaFormScreen.edit(ideaId: state.pathParameters['id']!),
+        ),
+        GoRoute(
+          path: 'task/new',
+          builder: (BuildContext context, GoRouterState state) =>
+              const TaskFormScreen.add(),
+        ),
+        GoRoute(
+          path: 'task/new/from/:ideaId',
+          builder: (BuildContext context, GoRouterState state) =>
+              TaskFormScreen.convert(ideaId: state.pathParameters['ideaId']!),
+        ),
+        GoRoute(
+          path: 'task/:id',
+          builder: (BuildContext context, GoRouterState state) =>
+              TaskFormScreen.edit(taskId: state.pathParameters['id']!),
+        ),
+        GoRoute(
+          path: 'archive',
+          builder: (BuildContext context, GoRouterState state) =>
+              const ArchiveScreen(),
+        ),
+        GoRoute(
+          path: 'search',
+          builder: (BuildContext context, GoRouterState state) =>
+              const SearchScreen(),
+        ),
+        GoRoute(
+          path: 'settings',
+          builder: (BuildContext context, GoRouterState state) =>
+              const SettingsScreen(),
+        ),
+      ],
     ),
   ],
 );

@@ -361,16 +361,26 @@ class _TaskFormScreenState extends ConsumerState<TaskFormScreen> {
     return PopScope<Object?>(
       // NAV-1, CONVERT-5. Leaving with unsaved changes asks; on Convert the
       // Idea is untouched either way, because nothing was written.
-      canPop: !_dirty,
+      //
+      // Convert always intercepts the pop, even with a pristine form, because
+      // CONVERT-5 requires the app to return "to the **Ideas tab**, from
+      // either entry point" — and a native pop returns to whatever pushed this
+      // screen, which is the Edit Idea screen when IDEAFORM-5 was the entry
+      // point. Letting the platform handle that case sent the user back into
+      // the Idea they had just declined to convert.
+      canPop: !_dirty && widget.mode != TaskFormMode.convert,
       onPopInvokedWithResult: (bool didPop, Object? _) async {
-        if (didPop || !_dirty) {
+        if (didPop) {
           return;
         }
-        final bool discard = await confirmDiscard(context);
-        if (discard && context.mounted) {
-          _dirty = false;
-          _leave(context);
+        if (_dirty && !await confirmDiscard(context)) {
+          return;
         }
+        if (!context.mounted) {
+          return;
+        }
+        _dirty = false;
+        _leave(context);
       },
       child: Scaffold(
         appBar: AppBar(title: Text(widget.mode.title)),

@@ -9,11 +9,15 @@ Items are numbered in the order they were raised and are never renumbered.
 
 | # | Summary | Status |
 |---|---|---|
-| B1 | No way back to Home after an add, save or convert | **Awaiting owner's decision** on the proposed fix |
+| B1 | No way back to Home after an add, save or convert | **Done** |
 | B2 | Only the text opens the Edit screen; the rest of the row is dead | **Done** |
-| B3 | Add Task / Add Idea buttons at the foot of each list | **Blocked on B1** |
+| B3 | An add button on each Review tab | **Done**, to REVIEW-4 as rewritten in spec v1.9 |
 | B4 | Timeframe headers do not read as headers | **Done** |
-| B5 | `"Make Task"` crowds the Idea text | **Awaiting owner's choice** of option |
+| B5 | `"Make Task"` crowds the Idea text | **Done**, option 4 — awaiting the owner's verdict on a device |
+
+One defect was found while implementing B1 rather than reported: **CONVERT-5's
+cancel returned to the Edit Idea screen instead of the Ideas tab** when the
+form had not been edited. It is recorded as R-B1-2.
 
 ---
 
@@ -56,12 +60,18 @@ sits directly under `Distant`. Both should behave exactly as the equivalent
 button on the Home screen, returning to Review whether the Item was added or
 backed away from, and B1's guarantee must still hold from there.
 
-**Specification bearing.** This one needs the owner's attention, because
-**REVIEW-4 currently forbids it**: *"The Review screen is for reviewing,
-completing and processing what already exists. It offers no way to author a new
-Item from blank: no add-task button, no add-idea button, no add-subtask button.
-Capture happens on the Home screen."* Implementing B3 as reported means amending
-REVIEW-4 in `ZEN_SPEC.md`. See `REVIEW_DECISIONS.md`.
+**Specification bearing.** As first reported this was forbidden by REVIEW-4,
+which said the Review screen "offers no way to author a new Item from blank".
+The owner rewrote it in **spec v1.9**: REVIEW-4 now *requires* the button, and
+specifies it more precisely than B3 did — a floating action button in the
+bottom-right of the list area rather than a row at the foot of the list,
+pre-filling nothing from the list's state, returning to the tab it was pressed
+from, and with reserved bottom padding so it cannot cover the last row or
+TODO-6's link. REVIEW-5 keeps the parts of the old rule that were still true,
+and REVIEW-6 keeps Home as the path NFR-2 is measured against.
+
+**Built to v1.9, not to the original report.** Where the two differ the
+specification wins.
 
 ## B4 — Timeframe headers do not read as headers
 

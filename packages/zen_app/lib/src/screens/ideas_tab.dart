@@ -12,6 +12,7 @@ import '../providers/app_providers.dart';
 import '../router.dart';
 import '../widgets/highlight.dart';
 import '../widgets/item_row.dart';
+import 'review_screen.dart';
 import 'idea_form_screen.dart' show TimeframePicker;
 
 /// §5.8. Four collapsible groups in fixed order, each listing its Ideas oldest
@@ -83,7 +84,11 @@ class _IdeasTabState extends ConsumerState<IdeasTab> {
         final Set<Timeframe> expanded = _expandedGroups(settings);
 
         return ListView(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          // REVIEW-4. Clearance so the add button never covers the last group.
+          padding: const EdgeInsets.only(
+            top: 8,
+            bottom: ReviewScreen.fabClearance,
+          ),
           children: <Widget>[
             // IDEAS-1. "four collapsible groups in fixed order Now, Soon,
             // Later, Distant". IDEAS-3 shows a header even when empty.
@@ -207,7 +212,21 @@ class _IdeaRow extends StatelessWidget {
       child: ConstrainedBox(
         // ROW-5. "Its touch target is at least 48 × 48 dp."
         constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-        child: OutlinedButton(
+        // B5. A `TextButton` with the padding cut from Material's default 24
+        // to 8 and the label a step down to `labelMedium`. That takes the
+        // button from about 34% of an Idea row's width to about 22%, so names
+        // wrap near 78% instead of 62%.
+        //
+        // IDEAS-6 fixes the label as the exact string `"Make Task"`, so the
+        // width came out of the chrome rather than out of the words. ROW-5's
+        // 48 dp touch target and 16 dp gap put a floor of roughly 16% on what
+        // this can ever occupy, whatever it says.
+        child: TextButton(
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: const Size(48, 48),
+            textStyle: Theme.of(context).textTheme.labelMedium,
+          ),
           onPressed: () => context.push(Routes.convertIdea(idea.id)),
           child: const ExcludeSemantics(child: Text('Make Task')),
         ),

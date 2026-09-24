@@ -15,6 +15,7 @@ import '../widgets/completion_circle.dart';
 import '../widgets/confirmations.dart';
 import '../widgets/highlight.dart';
 import '../widgets/item_row.dart';
+import 'review_screen.dart';
 
 /// §5.7. TODO-1's visible Tasks, in TODO-2's order, with TODO-3's circles.
 ///
@@ -84,7 +85,12 @@ class _TodoTabState extends ConsumerState<TodoTab> {
       data: (List<Task> visible) {
         _scrollToHighlight();
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          // REVIEW-4. Clearance so the add button never covers the last Task
+          // or TODO-6's link.
+          padding: const EdgeInsets.only(
+            top: 8,
+            bottom: ReviewScreen.fabClearance,
+          ),
           // TODO-6. The `"Archived tasks"` link sits below the last Task, so it
           // is one extra item rather than a footer widget.
           itemCount: visible.length + 1,

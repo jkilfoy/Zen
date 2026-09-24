@@ -27,7 +27,7 @@ class SettingsScreen extends ConsumerWidget {
   ///
   /// Read from the document's own header when it changes; the app version comes
   /// from the package metadata.
-  static const String specVersion = '1.8';
+  static const String specVersion = '1.9';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
