@@ -12,7 +12,15 @@ android {
     // SDK's own defaults are 36 / 36 / 24, so minSdk in particular would drift
     // away from the specified 26. See DECISIONS.md, D-M4-2.
     compileSdk = 36
-    ndkVersion = flutter.ndkVersion
+    // Pinned for the same reason as the three levels above, and with sharper
+    // teeth: a Flutter SDK upgrade moving `flutter.ndkVersion` makes Gradle try
+    // to download the new one, and on this toolchain that download is broken —
+    // cmdline-tools 23.0 deprecated `sdkmanager`, and its shim crashes
+    // (0xC0000409) rather than failing cleanly, so the build dies with
+    // "Package ndk not found" and nothing that names the real cause. This is
+    // the version M4 was actually built and verified with. See DECISIONS.md,
+    // D-M4-16.
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

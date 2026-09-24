@@ -112,25 +112,24 @@ run headlessly:
 cd packages/zen_app && flutter test
 ```
 
-Launching it is another matter, and it has never been done. §11.13.1 puts that
-in the column marked "requires the owner's real hardware", and the machine this
-was built on is missing both toolchains:
+It has been run and accepted on both platforms (2026-09-24):
 
 ```bash
-flutter run -d windows    # needs Visual Studio 2022 + "Desktop development with C++"
-flutter run -d <device>   # needs the Android cmdline-tools and accepted licences
+flutter run -d windows
+flutter run -d emulator-5554
 ```
 
-- **Windows.** §11.2 requires Visual Studio **2022** with the "Desktop
-  development with C++" workload. Visual Studio 2026 is not supported for
-  compiling Flutter Windows desktop apps. Windows also needs **Developer Mode**
-  enabled (`start ms-settings:developers`), because building with plugins needs
-  symlink support.
-- **Android.** `flutter doctor --android-licenses`, and Android Studio's
-  command-line tools component.
+Three toolchain things are needed first, and a fresh machine will hit all of
+them — Visual Studio **2022** Build Tools with the "Desktop development with
+C++" workload (including CMake tools and the Windows 10 SDK), the Android
+command-line tools with accepted licences, and **NDK 28.2.13676358**, which
+must be installed by hand because Gradle's own attempt fails on this toolchain
+(D-M4-16). Windows builds also need symlink support: Developer Mode, or an
+elevated terminal.
 
-`MANUAL_VERIFICATION.md` is the checklist to work through the first time it
-runs on each.
+`MANUAL_VERIFICATION.md` records exactly what was checked, what each gap was
+and what closed it, and is the script to re-run after a change that could
+plausibly affect any of it.
 
 ## Conventions
 
@@ -155,8 +154,8 @@ still waiting on real hardware (§11.13.1).
 | M1 — `zen_domain` model and rules | **done** |
 | M2 — merge | **done** — `NameUnionMergeStrategy` per §9.3, with property tests over many seeds |
 | M3 — `zen_data` | **done** — 313 domain + 182 data tests green; every constraint has a test that attempts the violation |
-| M4 — capture path | **code done, tests green** — but "the app runs on both platforms" is unverified; see *Running the app* |
-| M5 — remaining screens | **code done, tests green** — §5 fully implemented; goldens run on Windows only (D-M4-8) |
+| M4 — capture path | **done** — 87 widget tests green, and confirmed by hand on Windows and an Android emulator |
+| M5 — remaining screens | **done** — §5 fully implemented; goldens run on Windows only (D-M4-8) |
 | M6 — `zen_sync` core | not started |
 | M7 — LAN transport | not started |
 | M8 — packaging | not started |

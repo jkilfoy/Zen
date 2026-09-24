@@ -6,13 +6,24 @@ owner a written checklist** for the second column rather than claim a milestone
 done on code that has never run.
 
 This is that checklist. Each step names what to do, what you should see, and
-what to report back. Until every M4/M5 step below is confirmed, M4's definition
-of done — *"The app runs on both platforms"* — is **not** met, whatever the test
-count says.
+what to report back.
+
+> **M4 and M5: completed and accepted, 2026-09-24.** W-1 … W-12 on Windows 10
+> 22H2 (Visual Studio Build Tools 2022 17.14.41), A-1 … A-9 and Z-1, Z-2 on an
+> `android-36.1` `x86_64` emulator. Every step accepted by the owner.
+>
+> One caveat carried forward: **A-2 was measured on a debug build.** Cold start
+> to a focused name field was about 1.5 s on both platforms — inside NFR-2's
+> target, but debug builds run Dart under JIT with the VM service attached, so
+> this is not yet the number NFR-2 is about. Re-measure on a release build; it
+> is an open item in `DECISIONS.md`.
+>
+> The sections below stand as the record of what was checked, and as the script
+> to re-run after a change that could plausibly affect any of it.
 
 ---
 
-## Why this file exists for M4 and M5
+## Why this file existed for M4 and M5
 
 Everything else in these two milestones is in §11.13.1's left-hand column and is
 proved: 349 tests in `zen_domain`, 182 in `zen_data`, 87 in `zen_app`, all
@@ -21,12 +32,16 @@ headless. What is not proved is the one thing widget tests cannot touch —
 both platforms' is not established by widget tests, and this is the first
 milestone where that applies."*
 
-The machine this was built on cannot attempt either build:
+The machine this was built on could not attempt either build until three
+toolchain gaps were closed. Recorded here because a fresh clone on a fresh
+machine will hit all three:
 
-| Platform | What is missing |
-|---|---|
-| Windows | Visual Studio **2019** Community is installed, without the "Desktop development with C++" workload. §11.2 requires Visual Studio **2022** with that workload. (§11.2 also notes VS **2026** is *not* supported for Flutter Windows desktop; do not install it as the toolchain.) Windows Developer Mode is also off, and building with plugins needs it for symlink support. |
-| Android | The Android SDK is present (36.1.0) but `cmdline-tools` is missing and the licences are unaccepted, so no APK can be assembled. |
+| Platform | What was missing | What fixed it |
+|---|---|---|
+| Windows | Visual Studio **2019** Community, without the "Desktop development with C++" workload. §11.2 requires Visual Studio **2022** with it. (§11.2 also notes VS **2026** is *not* supported for Flutter Windows desktop.) | Visual Studio **Build Tools 2022** with that workload — and check the *Installation details* pane really includes **MSVC v143**, **C++ CMake tools for Windows** and the **Windows 10 SDK**. Flutter's error text names the VS 2019 component `MSVC v142`; that is a hardcoded message, not a requirement. |
+| Windows | Developer Mode off, so the plugin symlinks a Flutter Windows build creates cannot be made. | Builds are run from an **elevated terminal**, which carries the symlink privilege. Developer Mode would do the same; the owner prefers not to enable it. Expect `build/` to end up owned by the elevated process — if `flutter test` later fails on a delete, remove `packages/zen_app/build` from that same terminal. |
+| Android | `cmdline-tools` absent and the licences unaccepted. | Android Studio ▸ SDK Tools ▸ *Android SDK Command-line Tools*, then `flutter doctor --android-licenses`. |
+| Android | **No NDK.** `sqlite3` builds from C on Android (D-M4-16), and Gradle's attempt to fetch the NDK itself fails: `cmdline-tools` 23.0 deprecated `sdkmanager` and its shim crashes with `0xC0000409`, which surfaces as `Package ndk not found` against an unrelated line of `android/build.gradle.kts`. | `android sdk install ndk/28.2.13676358`, using the new `android` CLI in `cmdline-tools/latest/bin`. `ndkVersion` is now pinned to that version so Gradle never tries to fetch another. |
 
 ---
 
