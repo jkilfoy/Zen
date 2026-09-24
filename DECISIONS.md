@@ -675,6 +675,64 @@ real schema and assert against what was persisted.
 
 ---
 
+## M5 — the remaining screens
+
+**D-M5-1 — Archived and deleted Tasks open through the ordinary Edit Task
+route, which reads their state.**
+ARCH-3 opens an archived Task "in **read-only** mode … plus an `"Unarchive"`
+action", and SEARCH-3 does the same for a deleted one with `"Restore"`. Neither
+is a separate screen: `TaskFormScreen.edit` asks the Task whether it is active
+and renders accordingly, so a Task opened from the archive, from search or from
+a stale link behaves the same way wherever the link came from. The alternative —
+a `readOnly` flag on the route — would let a caller open an archived Task
+editable, which STATUS-4 forbids and which the domain would then have to refuse
+at save time with a violation the user never sees.
+
+**D-M5-2 — IDEAS-2's group toggles are local state, seeded from the setting.**
+"On entering the tab, a group is expanded if and only if it is in
+`settings.expandedIdeaGroups`. Tapping a header toggles that group. The toggle
+lasts until the user leaves the Review screen; it does not change the setting."
+So the tab copies the set into its own state on first build and mutates the copy;
+nothing is written back. Leaving Review disposes the state, which is exactly the
+lifetime the rule asks for.
+
+**D-M5-3 — The Search screen filters in memory over two streams.**
+SEARCH-1 matches "name, tags, context/description and subtask names", which
+spans four tables, and SEARCH-2's Deleted filter reaches rows no other screen
+shows. A SQL search would need `LIKE` over a join plus its own normalization,
+duplicating §2's — and the normalization is the thing §11.5.2 warns must exist in
+exactly one place. Filtering `ideasProvider` and `allTasksProvider` with
+`SearchQuery` keeps one definition of a match, keeps it testable in `zen_domain`,
+and costs nothing at this product's scale: this is one person's task list, not a
+corpus.
+
+**D-M5-4 — Settings write on change, with no local copy.**
+SET-2 says "Changes apply immediately and persist", so each control writes
+straight through `SettingsRepository` and the screen renders
+`currentSettingsProvider`. There is no draft state and therefore no way for the
+screen to disagree with what is stored — which also means the theme and the decor
+react the moment the control moves, without a save step DECOR-1 would have to
+work around.
+
+**D-M5-5 — The test viewport is 800 × 2400.**
+`ListView`'s child delegate is lazy, so a control below the fold is not in the
+widget tree at all and a finder for it matches nothing — a failure that reads as
+"the screen has no Save button" rather than "the screen is taller than the
+viewport". Both form screens are longer than the default 800 × 600 test view, so
+`ZenHarness.pumpApp` sets a tall one. NFR-7's responsiveness is tested
+separately and deliberately, at 400 px wide, in `shell_test.dart`, where an
+overflow is asserted not to happen rather than merely not to be noticed.
+
+**D-M5-6 — ROW-5's geometry is asserted, not eyeballed.**
+Its numbers — 16 px from the text block, a 48 × 48 touch target, 24 px between
+consecutive rows' buttons — exist so that a mis-aimed tap cannot consume the
+wrong Idea, which is a data-loss-shaped mistake rather than a cosmetic one. They
+are checked with `tester.getRect` in `shell_test.dart` rather than left to a
+golden, because a golden would tell you the picture changed without telling you
+which rule broke.
+
+---
+
 ## Verification status (§11.13.1)
 
 §11.13.1 requires that no milestone be reported done on the strength of code
@@ -682,6 +740,8 @@ that has never run.
 
 | Milestone | Verified | How |
 |---|---|---|
+| M5 | **Partly** | §5 is fully implemented and 87 tests are green under `flutter test` in `zen_app`. **AC-4** and **AC-5** pass on the Edit Task screen, **AC-10** passes through the Archived Tasks UI *and* through Search's Restore, and **AC-11** passes via the Edit Idea entry point as well as `"Make Task"`. §11.12 item 6's golden tests exist for all three TODO-3 circle states and all three disabled variants — **on Windows only** (D-M4-8); CI skips them. HOME-5's five shortcuts, NFR-7 at 400 px, ROW-5's three distances and §11.5.5's recovery screen each have a test. What is **not** verified is the same thing M4's row names: nothing here has been seen on a screen outside `flutter test`. `MANUAL_VERIFICATION.md` is the checklist. |
+| M4 | **Partly** | The headless half is done: 349 tests in `zen_domain` (36 new, for `updateTask`, `logicalDayOf` and `SearchQuery`), 182 in `zen_data`, 87 in `zen_app`. **AC-1, AC-2, AC-3, AC-7** pass again as widget tests against a real in-memory database, and **AC-8, AC-9, AC-11, AC-12** pass through the screens. `dart analyze --fatal-infos --fatal-warnings` clean across all four packages, `dart format` clean. **The definition of done is not met.** It requires "The app runs on both platforms", which §11.13.1 puts in the right-hand column, and neither build can be attempted on this machine: Visual Studio 2019 Community is installed without the "Desktop development with C++" workload (§11.2 requires VS 2022 with it), Windows Developer Mode is off, and the Android SDK is missing `cmdline-tools` with its licences unaccepted. Nothing in M4 or M5 has ever been launched. See `MANUAL_VERIFICATION.md`. |
 | M3 | **Yes** | 182 tests green under `flutter test` in `zen_data`, plus 313 in `zen_domain` (16 new there, for EOD-2A, INV-8 and INV-9). Sixty-seven of the 182 are constraint tests written in raw SQL with the repositories bypassed: every `CHECK`, both partial unique indexes, all seven triggers, the foreign keys and the cascades are attacked and required to fail, and each assertion names the constraint that fired, so a test cannot pass because some other constraint objected first. AC-6, AC-8, AC-9 and AC-10 pass against a real in-memory database, with AC-8/9/10 reaching the partial index rather than an application check. The §11.5.3 harness is in place: `drift_schemas/drift_schema_v1.json` is committed and a test verifies the live schema against it. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean. §11.13.1 puts all of M3 in the left-hand column and that held — Drift ran headlessly throughout and nothing here needs real hardware. |
 | M2 | **Yes** | 297 tests green under `dart test` (223 before M2, so 74 new), covering AC-13 through AC-19, every step and every field rule of §9.3, and the four property tests of §11.12 item 2 — order-independence, idempotence, invariant preservation against `datasetInvariantFailures`, and no resurrection — each over 300 seeds with the seed in every failure message. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean, and `zen_domain` still declares no dependency that touches IO. Pure Dart, so §11.13.1 puts this entirely in the left-hand column: there is nothing here that needs real hardware. |
 | M1 | **Yes** | 223 tests green under `dart test`, covering every rule in §4, every invariant in §3.7, the validation in §3.1 and §3.5, the EoD calculator at exact boundary instants including both DST transitions, and AC-1, AC-2, AC-3 and AC-7 as pure domain tests. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean, and `zen_domain` still declares no dependency that touches IO (`test/architecture_test.dart`). |
@@ -695,3 +755,14 @@ Nothing in this table may be treated as complete until its column reads "Yes".
   locally, but the repository has no GitHub remote yet, so the workflow, the
   `subosito/flutter-action@v2` pin and the Linux-vs-Windows line-ending
   handling are unproven. This resolves the first time the repository is pushed.
+
+- **The app has never been launched, on either platform.** This is M4's and
+  M5's open item and the reason both read "Partly" above. `flutter run` cannot
+  be attempted on the machine they were built on — see the M4 row for what is
+  missing from each toolchain. `MANUAL_VERIFICATION.md` is the checklist to
+  work through; until it comes back confirmed, neither milestone is done.
+
+- **The goldens exist on Windows only** (D-M4-8). The Linux CI runner skips
+  them, so they are not a check on every push, only on every local
+  `tools/verify.ps1`. Once `ci.yaml` has run at least once, a second set can be
+  generated there with `--update-goldens` and selected by platform.

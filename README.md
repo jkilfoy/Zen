@@ -105,16 +105,32 @@ dart test test/time/end_of_day_test.dart
 
 ## Running the app
 
-Not yet. The Flutter UI arrives in M4; `packages/zen_app` currently holds only
-its pubspec and a placeholder library, and its `android/` and `windows/`
-folders are generated at that point (see `DECISIONS.md`, D-M0-6).
-
-What does exist is the whole rules engine and the database beneath it:
+Every screen in §5 exists, and the whole layer is covered by widget tests that
+run headlessly:
 
 ```bash
-cd packages/zen_domain && dart test    # rules, merge — about a second
-cd packages/zen_data   && flutter test # schema, constraints, repositories
+cd packages/zen_app && flutter test
 ```
+
+Launching it is another matter, and it has never been done. §11.13.1 puts that
+in the column marked "requires the owner's real hardware", and the machine this
+was built on is missing both toolchains:
+
+```bash
+flutter run -d windows    # needs Visual Studio 2022 + "Desktop development with C++"
+flutter run -d <device>   # needs the Android cmdline-tools and accepted licences
+```
+
+- **Windows.** §11.2 requires Visual Studio **2022** with the "Desktop
+  development with C++" workload. Visual Studio 2026 is not supported for
+  compiling Flutter Windows desktop apps. Windows also needs **Developer Mode**
+  enabled (`start ms-settings:developers`), because building with plugins needs
+  symlink support.
+- **Android.** `flutter doctor --android-licenses`, and Android Studio's
+  command-line tools component.
+
+`MANUAL_VERIFICATION.md` is the checklist to work through the first time it
+runs on each.
 
 ## Conventions
 
@@ -139,8 +155,8 @@ still waiting on real hardware (§11.13.1).
 | M1 — `zen_domain` model and rules | **done** |
 | M2 — merge | **done** — `NameUnionMergeStrategy` per §9.3, with property tests over many seeds |
 | M3 — `zen_data` | **done** — 313 domain + 182 data tests green; every constraint has a test that attempts the violation |
-| M4 — capture path | not started |
-| M5 — remaining screens | not started |
+| M4 — capture path | **code done, tests green** — but "the app runs on both platforms" is unverified; see *Running the app* |
+| M5 — remaining screens | **code done, tests green** — §5 fully implemented; goldens run on Windows only (D-M4-8) |
 | M6 — `zen_sync` core | not started |
 | M7 — LAN transport | not started |
 | M8 — packaging | not started |

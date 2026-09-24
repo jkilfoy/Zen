@@ -26,7 +26,11 @@ const String testZoneId = 'America/Toronto';
 /// A test's database, providers and clock, wired together.
 final class ZenHarness {
   /// Builds a harness over a fresh in-memory database.
-  factory ZenHarness({Settings? settings, DateTime? now}) {
+  /// A non-default [Settings] is written through `harness.settings` by the
+  /// test, not passed here: `initialSettingsProvider` is only what the first
+  /// frame reads, and `settingsProvider`'s stream — the stored value — wins as
+  /// soon as it emits.
+  factory ZenHarness({DateTime? now}) {
     final AppDatabase db = AppDatabase(NativeDatabase.memory());
     addTearDown(db.close);
     final FakeClock clock = FakeClock(now ?? base, zoneId: testZoneId);
@@ -34,7 +38,7 @@ final class ZenHarness {
       overrides: [
         databaseProvider.overrideWithValue(db),
         localZoneIdProvider.overrideWithValue(testZoneId),
-        initialSettingsProvider.overrideWithValue(settings ?? Settings()),
+        initialSettingsProvider.overrideWithValue(Settings()),
         deviceNameProvider.overrideWithValue('test-device'),
         // §11.11. Even in `zen_app`, tests stand the clock where they need it.
         clockProvider.overrideWithValue(clock),
@@ -74,9 +78,21 @@ final class ZenHarness {
   /// §9.3 step 1, CONVERT-4. The Idea tombstones.
   TombstoneStore get tombstones => container.read(tombstoneStoreProvider);
 
+  /// A test viewport tall enough that a whole form screen fits on it.
+  ///
+  /// `ListView`'s child delegate is lazy: a control below the fold is not in
+  /// the widget tree at all, so a finder for it matches nothing and the failure
+  /// reads as "the screen does not have a Save button". The default 800 × 600
+  /// view is shorter than either form. NFR-7's responsiveness is a separate
+  /// concern and is not what these tests are about.
+  static const Size viewportSize = Size(800, 2400);
+
   /// Pumps the whole application, so the flows of §5.1 are exercised through
   /// the real router rather than by constructing a screen directly.
   Future<void> pumpApp(WidgetTester tester) async {
+    tester.view.physicalSize = viewportSize;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(
       UncontrolledProviderScope(container: container, child: const ZenApp()),
     );
@@ -95,6 +111,18 @@ final class ZenHarness {
   }
 }
 
+/// Scrolls [finder] into view, then taps it.
+///
+/// Both form screens are `ListView`s taller than the test viewport, so a
+/// control near the bottom — Save, Delete, the Advanced details panel — is
+/// built but off screen, and `tap` refuses to hit it.
+Future<void> tapItem(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+  await tester.tap(finder);
+  await tester.pumpAndSettle();
+}
+
 /// Reads a repository stream's current value from inside a widget test.
 ///
 /// `testWidgets` runs its body with a fake clock, and a Drift stream's first
@@ -104,6 +132,12 @@ final class ZenHarness {
 /// friends — needs none of this.
 Future<T> readStream<T>(WidgetTester tester, Stream<T> stream) async =>
     (await tester.runAsync(() => stream.first)) as T;
+
+/// Mints ids for the seeded items.
+///
+/// NAME-7 lets an archived Task and an active one share a name, which AC-9 and
+/// AC-10 both rely on, so the id cannot be derived from the name.
+final IdGenerator _seedIds = SequentialIdGenerator(prefix: 'seed');
 
 /// Builds and stores an Idea, returning it.
 Future<Idea> seedIdea(
@@ -116,7 +150,7 @@ Future<Idea> seedIdea(
 }) async {
   final DateTime now = createdAt ?? harness.clock.nowUtc();
   final Idea idea = Idea(
-    id: 'idea-$name',
+    id: _seedIds.newId(),
     name: ItemName.parse(name).unwrap(),
     tags: <Tag>[for (final String tag in tags) Tag.parse(tag).unwrap()],
     context: ItemText.parseContext(context).unwrap(),
@@ -145,7 +179,7 @@ Future<Task> seedTask(
   final DateTime now = createdAt ?? harness.clock.nowUtc();
   int index = 0;
   Task task = Task(
-    id: 'task-$name',
+    id: _seedIds.newId(),
     name: ItemName.parse(name).unwrap(),
     tags: <Tag>[for (final String tag in tags) Tag.parse(tag).unwrap()],
     description: ItemText.parseDescription(description).unwrap(),
@@ -153,7 +187,7 @@ Future<Task> seedTask(
     subtasks: <Subtask>[
       for (final (String subtaskName, TaskStatus subtaskStatus) in subtasks)
         Subtask(
-          id: 'sub-$name-${index++}',
+          id: '${_seedIds.newId()}-sub-${index++}',
           name: SubtaskName.parse(subtaskName).unwrap(),
           status: subtaskStatus,
           createdAt: now,
