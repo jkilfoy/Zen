@@ -2,7 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.5 |
+| Document version | 1.6 |
+| Changes in 1.6 | §11.5.1's table list still named the `tags` / `item_tags` pair that v1.5 replaced three lines below it (D-M3-16). Corrected to `idea_tags` and `task_tags`. |
 | Changes in 1.5 | Eleven findings from the M3 agent's pre-implementation review, all accepted. **§3: millisecond precision is exact, not a floor** — Drift's default stores whole seconds, which would have manufactured `updatedAt` ties and reverted renames through §9.3 step 4, and mixed-width ISO text sorts non-chronologically. **§3.7 gains INV-8** (the `sourceIdea` pair) **and INV-9** (timestamp precision). **§11.5.1 replaces the shared `tags` / polymorphic `item_tags` pair with per-kind `idea_tags` and `task_tags`**, which can express TAG-4 and can carry a real cascading foreign key. **§11.5.2** adds `CHECK`s for INV-5, INV-8 and INV-9, gives INV-2 and INV-7 triggers instead of a repository-only check, pins ISO-8601 text storage, and specifies attempt-and-translate over pre-checking. **EOD-2A**: archiving no longer moves `updatedAt`. **§11.5.4**: the sweep takes its time inputs explicitly. **§11.4.6**: `EventLog` gains `prune`. **§11.6.5**: a merge is applied by wholesale replacement, never row by row. |
 | Changes in 1.4 | Ten findings from the M2 agent's pre-implementation review of §9.3, all accepted. **§9.1 gains MERGE-3A**, distinguishing the set-valued collections (`ideas`, `tasks`, `tombstones`, emitted sorted by `id`) from the genuinely ordered ones (`subtasks`, `tags`). **§9.3 is rewritten**: record order is defined instead of the unusable "sorted by `id`"; tombstones are deduplicated per Idea; **subtask matching is by `id` first and by name-position only as a fall-back**, which fixes a silent data-loss bug where a renamed subtask collapsed two distinct subtasks into one; `archivedAt` and `deletedAt` are conditional on their flags (INV-4); the `sourceIdea` fields resolve as a pair; subtask `completedAt` and list order are specified; and step 6's termination argument is corrected. §9.4 now records that `Done`, `isDeleted` and `isArchived` are all sticky, not just `Done`. |
 | Changes in 1.3 | Pre-M2 review of §9.3, which was ambiguous in two places that decide real behaviour. **Step 4 now defines the primary record**: a component normally holds several records sharing the chosen `id`, and the choice between them decides whether a rename survives a merge or is silently reverted. **Step 5(d)** applies the same rule to subtasks. **Step 6** now groups all colliding Items by name and resolves each group in one pass, because the pairwise wording was order-dependent once three Items collide, breaking MERGE-2. |
@@ -809,7 +810,7 @@ abstract interface class ConversionService {
 ### 11.5 `zen_data`
 
 #### 11.5.1 Tables
-`ideas`, `tasks`, `subtasks`, `tags`, `item_tags`, `idea_tombstones`, `events`, `settings`, `replica`.
+`ideas`, `tasks`, `subtasks`, `idea_tags`, `task_tags`, `idea_tombstones`, `events`, `settings`, `replica`.
 
 - `subtasks` has `task_id` (FK, `ON DELETE CASCADE`) and an explicit `sort_index` integer; the list order in §3.3 is user-controlled and MUST NOT depend on insertion order or id.
 - **Tags live in two per-kind tables, `idea_tags` and `task_tags`**, each with `(owner_id, value, value_normalized, sort_index)`, a real foreign key to its owner with `ON DELETE CASCADE`, `UNIQUE (owner_id, value_normalized)` — which is what actually enforces TAG-4 — and `UNIQUE (owner_id, sort_index)`. Index `value_normalized` for TAG-6's autocomplete, which is then a `UNION` of two indexed queries.
