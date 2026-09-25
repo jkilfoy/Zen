@@ -106,6 +106,50 @@ your hardware. S-1 to S-7 are Windows, where the code path is `dart:io` and
 already exercised by tests, but where the *folder picker* and a real
 Syncthing-style folder are not.
 
+### M6 — before you build
+
+M6 adds four native plugins — `file_selector` (both platforms), `saf_util` and
+`saf_stream` (Android), and `file_selector_android` underneath the first — so
+the first build after this commit is not an incremental one on either platform.
+
+```bash
+# All four packages: the dependency set changed.
+for p in zen_domain zen_data zen_sync zen_app; do (cd "packages/$p" && flutter pub get); done
+```
+
+**Android builds clean and was checked on 2026-09-24:** `flutter build apk
+--debug` succeeded in 138 s against `minSdk` 26. Nothing was needed beyond `pub
+get` — no manifest change, and no new permission, because
+`ACTION_OPEN_DOCUMENT_TREE` grants access by user choice rather than by
+manifest. The `flutter_timezone` Kotlin-Gradle-Plugin deprecation warning is
+**pre-existing and not fatal**; it predates M6 and is not a symptom of it.
+
+**Windows must be built from an elevated terminal**, which is the standing
+choice in place of Developer Mode (D-M4-16). Without one, `flutter build
+windows` stops at "Building with plugins requires symlink support" before it
+compiles anything — this is what happened when the agent tried, so **the Windows
+build of M6 is unverified**. The plugin list changed, so CMake reconfigures on
+the first run; if that misbehaves, `flutter clean` in `packages/zen_app` and
+build again.
+
+```bash
+# From an elevated terminal, in packages/zen_app:
+flutter build windows --release
+flutter run -d windows            # or this, for the checks below
+flutter run -d <your-device-id>   # Android
+```
+
+**Where the files are**, for S-22 to S-24 and for looking at backups by hand:
+
+| | Database | Backups |
+|---|---|---|
+| Windows | `%APPDATA%\dev.zen\Zen\zen.sqlite` | `%APPDATA%\dev.zen\Zen\backups\` |
+| Android | app-private; reach it with `adb shell run-as dev.zen.zen_app ls files` | the `backups/` directory beside it |
+
+**S-15 needs a folder-sync client** — Syncthing, or a cloud drive folder — set up
+independently on both devices and already replicating before Zen is pointed at
+it. Everything else needs only the two builds.
+
 ### M6 — Windows
 
 | # | Step | Expected | Report |

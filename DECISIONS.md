@@ -1034,6 +1034,15 @@ Nothing in this table may be treated as complete until its column reads "Yes".
 
 ### Open verification items
 
+- **The Windows build of M6 is unverified.** `flutter build windows` needs an
+  elevated terminal or Developer Mode (D-M4-16), and the agent had neither, so it
+  stopped at "Building with plugins requires symlink support" before compiling
+  anything. One new native plugin is registered there, `file_selector_windows`,
+  which is flutter.dev's own; `jni` was already in the FFI list before M6 and is
+  not new. The Android build **was** checked: `flutter build apk --debug`
+  succeeded on 2026-09-24 against `minSdk` 26, so `saf_util`, `saf_stream` and
+  `file_selector_android` at least compile and resolve.
+
 - **The Android SAF code has never executed.** `SafSnapshotDirectory`, `AndroidSyncFolderPicker` and `AndroidSnapshotFileExchange` are written against `saf_util` 3.1.0 and `saf_stream` 4.0.1 and are entirely platform channel calls, so nothing in the headless suite reaches them. Two things in particular are guesses until a device says otherwise: that SAF keeps the `.json` extension on a document created with `application/json` (if it does not, no peer will ever read the file), and that the delete-then-rename of §11.6.3 does not leave a `… (1).json` duplicate behind. Both are checked by S-9 and S-10 in `MANUAL_VERIFICATION.md`, and both fail *silently* if they are wrong — which is why they are the first things to look at.
 
 - **The delete-then-rename window on Android is accepted, not measured.** §11.6.3 records that SAF offers no atomic replace, so there is a moment when this replica’s snapshot file does not exist. The argument that this is acceptable — absent is not torn, and a missing peer file costs one sync round — is sound, but it is an argument rather than an observation. If it ever proves to matter, the generation-numbered scheme §11.6.3 names is the upgrade, and it changes the filename convention on both platforms.
