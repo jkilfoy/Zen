@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "replicaId": "01a0d661-37a3-7ef7-977b-db2e332f7f47",
   "deviceName": "DESKTOP-MHM318U",
-  "generatedAt": "2026-09-25T03:07:09.985Z",
+  "generatedAt": "2026-09-25T03:21:18.724Z",
   "appVersion": "0.1.0+1",
   "ideas": [
     {
@@ -14,26 +14,6 @@
       "timeframe": "later",
       "createdAt": "2026-09-24T13:25:44.212Z",
       "updatedAt": "2026-09-25T02:42:43.332Z"
-    },
-    {
-      "id": "01a0d522-2826-7865-bdbc-e67ff2b3bd2b",
-      "name": "ADfjkadsf",
-      "nameNormalized": "adfjkadsf",
-      "tags": [],
-      "context": "",
-      "timeframe": "now",
-      "createdAt": "2026-09-24T20:36:20.645Z",
-      "updatedAt": "2026-09-24T20:36:20.645Z"
-    },
-    {
-      "id": "01a0d522-be2d-7bef-bb99-9da69702b244",
-      "name": "dsfadf",
-      "nameNormalized": "dsfadf",
-      "tags": [],
-      "context": "",
-      "timeframe": "now",
-      "createdAt": "2026-09-24T20:36:59.053Z",
-      "updatedAt": "2026-09-24T20:36:59.053Z"
     },
     {
       "id": "01a0d669-3f0a-7365-b139-4d7b5a6f1129",
@@ -56,14 +36,14 @@
       "updatedAt": "2026-09-25T02:42:42.207Z"
     },
     {
-      "id": "01a0d679-1118-7467-8f05-f4a42b425218",
-      "name": "idea time",
-      "nameNormalized": "idea time",
+      "id": "01a0d693-90ce-7e59-bead-2c0d12897e0b",
+      "name": "Lets go shoot up the world",
+      "nameNormalized": "lets go shoot up the world",
       "tags": [],
       "context": "",
-      "timeframe": "now",
-      "createdAt": "2026-09-25T02:50:53.592Z",
-      "updatedAt": "2026-09-25T02:50:53.592Z"
+      "timeframe": "soon",
+      "createdAt": "2026-09-25T03:19:50.222Z",
+      "updatedAt": "2026-09-25T03:19:50.222Z"
     }
   ],
   "tasks": [
@@ -144,11 +124,11 @@
       "nameNormalized": "sign up for some shit",
       "tags": [],
       "description": "WFAf af aFIASDF adf",
-      "status": "todo",
+      "status": "done",
       "subtasks": [],
       "createdAt": "2026-09-24T19:00:48.362Z",
-      "updatedAt": "2026-09-24T19:00:48.362Z",
-      "completedAt": null,
+      "updatedAt": "2026-09-25T03:14:15.172Z",
+      "completedAt": "2026-09-25T03:14:15.172Z",
       "isArchived": false,
       "archivedAt": null,
       "isDeleted": false,
@@ -180,11 +160,11 @@
       "nameNormalized": "asdfsdfasdf",
       "tags": [],
       "description": "",
-      "status": "todo",
+      "status": "done",
       "subtasks": [],
       "createdAt": "2026-09-25T02:34:51.297Z",
-      "updatedAt": "2026-09-25T02:34:51.297Z",
-      "completedAt": null,
+      "updatedAt": "2026-09-25T03:14:13.360Z",
+      "completedAt": "2026-09-25T03:14:13.360Z",
       "isArchived": false,
       "archivedAt": null,
       "isDeleted": false,
@@ -234,7 +214,7 @@
       "nameNormalized": "movies times",
       "tags": [],
       "description": "",
-      "status": "todo",
+      "status": "done",
       "subtasks": [
         {
           "id": "01a0d678-ba83-731b-86eb-b6eee601fc56",
@@ -246,8 +226,98 @@
         }
       ],
       "createdAt": "2026-09-25T02:50:31.427Z",
-      "updatedAt": "2026-09-25T02:50:34.636Z",
-      "completedAt": null,
+      "updatedAt": "2026-09-25T03:14:14.235Z",
+      "completedAt": "2026-09-25T03:14:14.235Z",
+      "isArchived": false,
+      "archivedAt": null,
+      "isDeleted": false,
+      "deletedAt": null,
+      "sourceIdeaId": null,
+      "sourceIdeaCreatedAt": null
+    },
+    {
+      "id": "01a0d68e-8be4-77ad-8966-74e5388d6333",
+      "name": "ADfjkadsf",
+      "nameNormalized": "adfjkadsf",
+      "tags": [],
+      "description": "",
+      "status": "done",
+      "subtasks": [],
+      "createdAt": "2026-09-25T03:14:21.284Z",
+      "updatedAt": "2026-09-25T03:14:22.762Z",
+      "completedAt": "2026-09-25T03:14:22.762Z",
+      "isArchived": false,
+      "archivedAt": null,
+      "isDeleted": false,
+      "deletedAt": null,
+      "sourceIdeaId": "01a0d522-2826-7865-bdbc-e67ff2b3bd2b",
+      "sourceIdeaCreatedAt": "2026-09-24T20:36:20.645Z"
+    },
+    {
+      "id": "01a0d68e-a38c-7c5a-bb07-549319581ad3",
+      "name": "dsfadf",
+      "nameNormalized": "dsfadf",
+      "tags": [],
+      "description": "",
+      "status": "done",
+      "subtasks": [],
+      "createdAt": "2026-09-25T03:14:27.340Z",
+      "updatedAt": "2026-09-25T03:14:29.392Z",
+      "completedAt": "2026-09-25T03:14:29.392Z",
+      "isArchived": false,
+      "archivedAt": null,
+      "isDeleted": false,
+      "deletedAt": null,
+      "sourceIdeaId": "01a0d522-be2d-7bef-bb99-9da69702b244",
+      "sourceIdeaCreatedAt": "2026-09-24T20:36:59.053Z"
+    },
+    {
+      "id": "01a0d68e-c2a3-7329-88e1-ddd5b38e3d07",
+      "name": "idea time",
+      "nameNormalized": "idea time",
+      "tags": [],
+      "description": "",
+      "status": "done",
+      "subtasks": [],
+      "createdAt": "2026-09-25T03:14:35.299Z",
+      "updatedAt": "2026-09-25T03:14:39.699Z",
+      "completedAt": "2026-09-25T03:14:39.699Z",
+      "isArchived": false,
+      "archivedAt": null,
+      "isDeleted": false,
+      "deletedAt": null,
+      "sourceIdeaId": "01a0d679-1118-7467-8f05-f4a42b425218",
+      "sourceIdeaCreatedAt": "2026-09-25T02:50:53.592Z"
+    },
+    {
+      "id": "01a0d693-d638-70ff-b022-7c892e4d415a",
+      "name": "Gottq retire at some point",
+      "nameNormalized": "gottq retire at some point",
+      "tags": [],
+      "description": "",
+      "status": "done",
+      "subtasks": [],
+      "createdAt": "2026-09-25T03:20:07.991Z",
+      "updatedAt": "2026-09-25T03:21:01.995Z",
+      "completedAt": "2026-09-25T03:21:01.995Z",
+      "isArchived": false,
+      "archivedAt": null,
+      "isDeleted": false,
+      "deletedAt": null,
+      "sourceIdeaId": null,
+      "sourceIdeaCreatedAt": null
+    },
+    {
+      "id": "01a0d694-588d-7906-97dc-5079aaa447d6",
+      "name": "did something",
+      "nameNormalized": "did something",
+      "tags": [],
+      "description": "",
+      "status": "done",
+      "subtasks": [],
+      "createdAt": "2026-09-25T03:20:41.357Z",
+      "updatedAt": "2026-09-25T03:21:02.803Z",
+      "completedAt": "2026-09-25T03:21:02.803Z",
       "isArchived": false,
       "archivedAt": null,
       "isDeleted": false,
@@ -260,6 +330,21 @@
     {
       "id": "01a0d1a0-7cb1-7d86-9990-3d572b88feca",
       "deletedAt": "2026-09-24T19:00:48.362Z",
+      "reason": "converted"
+    },
+    {
+      "id": "01a0d522-2826-7865-bdbc-e67ff2b3bd2b",
+      "deletedAt": "2026-09-25T03:14:21.284Z",
+      "reason": "converted"
+    },
+    {
+      "id": "01a0d522-be2d-7bef-bb99-9da69702b244",
+      "deletedAt": "2026-09-25T03:14:27.340Z",
+      "reason": "converted"
+    },
+    {
+      "id": "01a0d679-1118-7467-8f05-f4a42b425218",
+      "deletedAt": "2026-09-25T03:14:35.299Z",
       "reason": "converted"
     }
   ]

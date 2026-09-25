@@ -203,6 +203,7 @@ before it was pointed at them.
 | S-29 | **Windows.** Set the interval to `Never`, then wait 20 minutes without touching the window | "Last synced" **never moves**. §11.8: "`0` disables." | Any movement at all. |
 | S-30 | **Android.** Switch to another app and back | "Last synced" moves once per return, not more. | Whether one return produced exactly one sync. |
 | S-31 | **Android.** With the interval at `Never` and `Sync when Zen opens` **off**, use the app for a while | Nothing syncs unless you press `Sync now`. | Any unrequested sync. |
+| S-32 | **Windows.** Settings ▸ Sync, look at the `Sync now` button | There is a clear gap between it and the grey rule above; its filled surface does not touch the rule. | Whether it still touches. |
 
 ### M6 — the recovery screen (§11.5.5)
 

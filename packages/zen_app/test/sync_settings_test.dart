@@ -154,6 +154,50 @@ void main() {
       expect(find.text('Choose folder…'), findsOneWidget);
     });
 
+    testWidgets('"Sync now" is clear of the rule above it', (
+      WidgetTester tester,
+    ) async {
+      // Reported on 2026-09-24 from a real Windows build: the button's top
+      // border sat on the grey rule. A `Divider` leaves only its own 8 px below
+      // the rule, and unlike the text-only buttons further down this one is
+      // filled, so its surface reads as touching. Asserted rather than
+      // eyeballed, the same way ROW-5's geometry is (D-M5-6) — a golden would
+      // say the picture changed without saying which rule broke.
+      final ZenHarness harness = ZenHarness();
+      await openSync(tester, harness);
+
+      final Rect buttonRect = tester.getRect(
+        find.widgetWithText(FilledButton, 'Sync now'),
+      );
+      // The rule immediately above the button: of every divider whose bottom
+      // edge is above it, the lowest.
+      final Finder dividers = find.byType(Divider);
+      double ruleBottom = double.negativeInfinity;
+      for (int i = 0; i < tester.widgetList<Divider>(dividers).length; i++) {
+        final double bottom = tester.getRect(dividers.at(i)).bottom;
+        if (bottom <= buttonRect.top && bottom > ruleBottom) {
+          ruleBottom = bottom;
+        }
+      }
+
+      expect(
+        ruleBottom,
+        greaterThan(double.negativeInfinity),
+        reason: 'there is a rule above the button',
+      );
+      // A literal minimum, **not** `SyncSection.dividerToButtonGap`. Asserting
+      // against the constant the layout uses makes the test agree with whatever
+      // that constant happens to be: written that way it passed with the gap set
+      // to 0, which is the defect this test exists to catch. The number here is
+      // the requirement; the constant is one way of meeting it and may exceed
+      // it.
+      expect(
+        buttonRect.top - ruleBottom,
+        greaterThanOrEqualTo(12),
+        reason: 'the filled button must not sit on the rule above it',
+      );
+    });
+
     testWidgets(
       'the last sync time reads "Not synced yet" on a fresh replica',
       (WidgetTester tester) async {

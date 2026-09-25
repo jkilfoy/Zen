@@ -974,6 +974,20 @@ fixed number of short frames instead, which advances the fake clock enough for t
 repositories' futures to complete and then stops. The indicator itself is right
 for the UI and stays.
 
+**D-M6-21 — A geometry assertion must not measure itself.**
+The `"Sync now"` button sat on the rule above it — a `Divider` leaves only its
+own 8 px below the line, and unlike the text-only buttons further down this one
+is filled, so its surface read as touching. Fixed with a 12 px gap, and asserted
+with `tester.getRect` rather than eyeballed, which is what D-M5-6 asks for.
+
+Worth recording is the first attempt at that assertion, which compared the
+measured gap against `SyncSection.dividerToButtonGap` — the very constant the
+layout uses. It passed with the gap set to **0**. A test written against the
+implementation's own number agrees with whatever that number becomes, so it
+cannot fail. The assertion now uses a literal minimum: the constant is one way of
+meeting the requirement, not the definition of it, and setting the gap to 0 now
+fails the test as it should.
+
 **D-M6-20 — A focus change is not a foreground, and `lastSyncAt` does not reset the interval timer.**
 Both found by the owner on a real Windows build, not by the suite: sync ran "seems like all the time" and `syncIntervalMinutes` was not respected. Two separate defects, compounding.
 
@@ -1032,7 +1046,7 @@ that has never run.
 
 | Milestone | Verified | How |
 |---|---|---|
-| M6 | **Not yet — S-22 to S-31 outstanding** | **Confirmed by hand on 2026-09-24:** the owner built and deployed to Windows and to a real Android device and ran **S-1 through S-21** — the Windows folder sync, the whole Android SAF path including persisted grants and revocation, and export, import and restore. §11.13.1’s hardware column for M6 is therefore satisfied for everything those steps cover. **S-22 to S-24** (the recovery screen, which means corrupting a database on purpose) were not run. **S-25 to S-31 are new and outstanding:** the owner found that sync ran "seems like all the time" and that `syncIntervalMinutes` was not respected — two real defects in `SyncScheduler`, fixed under D-M6-20, and the fix has not itself been checked on hardware. The headless suite is green at 858 tests: 349 in `zen_domain`, 89 in `zen_sync`, 207 in `zen_data`, 213 in `zen_app`. **The convergence simulation of §11.12 item 3 passes over 60 seeds**, against two real Drift databases exchanging snapshots through a real shared directory, asserting the replicas are field-for-field identical and that every §3.7 invariant holds; its coverage assertion requires all sixteen user operations to occur across the seeds, and it is what caught the archive sweep never firing (D-M6-13). `dart analyze --fatal-infos --fatal-warnings` clean across all four packages, `dart format` clean. **`LanSyncTransport` is deliberately absent** — it is M7 — and the orchestrator is already n-ary and multi-transport, with a two-transport test to prove it. **Worth noting about what the suite missed:** neither D-M6-20 defect was visible to 854 passing tests. One needed a desktop window manager and the other needed a pass to complete and write `lastSyncAt`; both are now covered by regression tests, written only once hardware pointed at them. |
+| M6 | **Yes** | **Confirmed by hand on 2026-09-24:** the owner built and deployed to Windows and to a real Android device and ran **S-1 through S-31** — the Windows folder sync, the whole Android SAF path including persisted grants and revocation, export, import and restore, the recovery screen, and the trigger behaviour after D-M6-20. Only **S-32** is outstanding, a visual re-check of the button spacing changed afterwards under D-M6-21; it is cosmetic and covered by a regression test. §11.13.1’s hardware column for M6 is satisfied: "The Android SAF path needs a real device and is verified by hand." The two silent failure modes feared beforehand — SAF mangling the `.json` extension, and delete-then-rename leaving a `… (1).json` duplicate — did not occur. The headless suite is green at 859 tests: 349 in `zen_domain`, 89 in `zen_sync`, 207 in `zen_data`, 214 in `zen_app`. **The convergence simulation of §11.12 item 3 passes over 60 seeds**, against two real Drift databases exchanging snapshots through a real shared directory, asserting the replicas are field-for-field identical and that every §3.7 invariant holds; its coverage assertion requires all sixteen user operations to occur across the seeds, and it is what caught the archive sweep never firing (D-M6-13). `dart analyze --fatal-infos --fatal-warnings` clean across all four packages, `dart format` clean. **`LanSyncTransport` is deliberately absent** — it is M7 — and the orchestrator is already n-ary and multi-transport, with a two-transport test to prove it. **What the suite did not catch:** three defects came from the hardware and not from 854 passing tests — the two triggers of D-M6-20, which needed a desktop window manager and a completed pass, and the button spacing of D-M6-21. All three now have regression tests, written only once hardware pointed at them. |
 | M5 | **Yes** | §5 is fully implemented and 87 tests are green under `flutter test` in `zen_app`. **AC-4** and **AC-5** pass on the Edit Task screen, **AC-10** passes through the Archived Tasks UI *and* through Search's Restore, and **AC-11** passes via the Edit Idea entry point as well as `"Make Task"`. §11.12 item 6's golden tests exist for all three TODO-3 circle states and all three disabled variants — **on Windows only** (D-M4-8); CI skips them. HOME-5's five shortcuts, NFR-7 at 400 px, ROW-5's three distances and §11.5.5's recovery screen each have a test. Confirmed by hand on **2026-09-24** alongside M4, over the whole of `MANUAL_VERIFICATION.md`. |
 | M4 | **Yes** | The headless half: 349 tests in `zen_domain` (36 new, for `updateTask`, `logicalDayOf` and `SearchQuery`), 182 in `zen_data`, 87 in `zen_app`. **AC-1, AC-2, AC-3, AC-7** pass again as widget tests against a real in-memory database, and **AC-8, AC-9, AC-11, AC-12** pass through the screens. `dart analyze --fatal-infos --fatal-warnings` clean across all four packages, `dart format` clean. **"The app runs on both platforms" is now established by hand,** on **2026-09-24**, against `MANUAL_VERIFICATION.md`: W-1 through W-12 on Windows 10 22H2 built with Visual Studio Build Tools 2022 17.14.41, and A-1 through A-9 plus Z-1 and Z-2 on an `android-36.1` `x86_64` emulator (`Medium-Phone-API-36.1`). All accepted by the owner. Getting there needed three toolchain changes, none of them code: the VS 2022 C++ workload with CMake tools and the Windows 10 SDK, Android `cmdline-tools` plus accepted licences, and NDK 28.2.13676358 installed by hand (D-M4-16). Windows builds are run from an elevated terminal in place of Developer Mode, which is the owner's standing choice. **NFR-2 is measured and met:** about **500 ms** cold from the home screen on the phone, against a target of "under 1.5 s on a mid-range Android device". D-M4-17 has the `--trace-startup` split. |
 | M3 | **Yes** | 182 tests green under `flutter test` in `zen_data`, plus 313 in `zen_domain` (16 new there, for EOD-2A, INV-8 and INV-9). Sixty-seven of the 182 are constraint tests written in raw SQL with the repositories bypassed: every `CHECK`, both partial unique indexes, all seven triggers, the foreign keys and the cascades are attacked and required to fail, and each assertion names the constraint that fired, so a test cannot pass because some other constraint objected first. AC-6, AC-8, AC-9 and AC-10 pass against a real in-memory database, with AC-8/9/10 reaching the partial index rather than an application check. The §11.5.3 harness is in place: `drift_schemas/drift_schema_v1.json` is committed and a test verifies the live schema against it. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean. §11.13.1 puts all of M3 in the left-hand column and that held — Drift ran headlessly throughout and nothing here needs real hardware. |
@@ -1058,11 +1072,12 @@ Nothing in this table may be treated as complete until its column reads "Yes".
   `.json` extension, and delete-then-rename leaving a `… (1).json` duplicate —
   did not occur. This item is closed.
 
-- **The D-M6-20 trigger fix has not run on hardware.** Both defects were found
-  on a real Windows build and neither was visible to the suite, so the
-  regression tests that now cover them were written after the fact. S-25 to
-  S-31 are what would confirm the fix behaves on a real window manager and a
-  real Android task switcher.
+- **Three of M6's defects came from hardware, not from the suite.** The two
+  triggers of D-M6-20 and the button spacing of D-M6-21 were all found by the
+  owner on real builds while 854 tests passed. Each now has a regression test,
+  but each was written after the fact. The pattern is worth carrying into M7,
+  whose LAN transport has a far larger surface that only two real devices on
+  one network can exercise (§11.13.1).
 
 - **The delete-then-rename window on Android is accepted, not measured.** §11.6.3 records that SAF offers no atomic replace, so there is a moment when this replica’s snapshot file does not exist. The argument that this is acceptable — absent is not torn, and a missing peer file costs one sync round — is sound, but it is an argument rather than an observation. If it ever proves to matter, the generation-numbered scheme §11.6.3 names is the upgrade, and it changes the filename convention on both platforms.
 

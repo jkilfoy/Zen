@@ -32,6 +32,12 @@ class SyncSection extends ConsumerWidget {
   /// §11.8. The intervals the picker offers. `0` is the spec's "disables".
   static const List<int> intervalChoices = <int>[0, 5, 15, 30, 60];
 
+  /// Vertical space between the rule above `"Sync now"` and the button.
+  ///
+  /// Named so the widget test can assert the same number the layout uses, which
+  /// is what stops the two drifting apart.
+  static const double dividerToButtonGap = 12;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final Settings settings = ref.watch(currentSettingsProvider);
@@ -130,6 +136,11 @@ class SyncSection extends ConsumerWidget {
         ),
 
         const Divider(),
+        // A `Divider` leaves only its own 8 px below the rule, and unlike the
+        // text-only buttons further down, `"Sync now"` is filled — so its
+        // surface reads as touching the rule at that distance. The gap is
+        // asserted in `sync_settings_test.dart` rather than eyeballed (D-M5-6).
+        const SizedBox(height: dividerToButtonGap),
 
         // §11.8, `"Sync now"` plus "the last sync time and result".
         Row(
