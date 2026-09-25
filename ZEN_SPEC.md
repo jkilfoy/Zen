@@ -2,7 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Document version | 1.13 |
+| Document version | 1.14 |
+| Changes in 1.14 | Fourteen findings from the M7 agent's pre-implementation review of §11.6.4, all accepted. **Security:** the pairing key is now generated per pairing rather than shared — one key across devices would let any paired phone decrypt and forge another's traffic — with the server trying each peer's key and AES-GCM's tag disambiguating; the QR payload is strictly parsed and the phone must confirm the host it is about to pair with, closing an exfiltration path where a malicious QR redirects every future snapshot; HKDF's salt and output length are pinned; the pairing code is CSPRNG-generated, keeps leading zeros and is compared in constant time; bodies are capped before being buffered. **Correctness:** `fetchPeerSnapshots` now takes the local snapshot, since a request/response exchange cannot work without it; `/pair` carries the phone's identity, without which the desktop cannot key a peer record; the `/sync` payload is the §11.6.1 document rather than a bare snapshot; `protocolVersion` is defined as 1 and distinct from `formatVersion`. **Liveness:** every client call is bounded by a timeout, since the exchange runs inside the single-flight lock and a hung request would otherwise block every later trigger. The five-minute skew check is corrected — it bounds replay rather than blocking it — and gains copy for the clock-skew failure it otherwise causes silently. Only the phone registers a transport. The server reuses the orchestrator rather than re-implementing the merge. §11.9 sets `allowBackup="false"`. |
 | Changes in 1.13 | v1.12 told the implementer to go and find out what Android's local-network permission requires; that was vague and slightly misleading, so §11.6.4 now states the answer. At `targetSdk` 36 no permission is needed — the grant is implicit through `INTERNET`, and holds even on Android 17 devices. `ACCESS_LOCAL_NETWORK` becomes mandatory only at `targetSdk` 37, which is therefore the change that would silently break LAN sync. §11.13.1 now records that the owner's test device is Android 13 (API 33), so newer-API behaviour is never exercised by manual verification. |
 | Changes in 1.12 | Two gaps found while preparing M7. §11.6.4 now requires the AES-GCM nonce to be **randomly generated** and never counter- or timestamp-derived, since nonce reuse under one key is a total break and no ordinary test detects it. It also now requires Android's local-network and discovery permissions for `targetSdk` 36 to be resolved, declared and recorded — a missing one presents as the phone never finding the desktop, with no error naming the cause. |
 | Changes in 1.11 | Sixteen findings from the M6 agent's pre-implementation review, all accepted. **§11.6.5 step 3 no longer ends the pass when no peers are found** — it skipped publishing, so two fresh devices could never discover each other and the file transport would never have worked at all. **Step 7 now publishes the post-merge dataset, always, to every enabled transport, and skips the write when content is unchanged.** Transports now exchange `SnapshotEnvelope` rather than `ReplicaSnapshot` (§11.6.2), since step 3's dedupe compares `generatedAt`, which §9.1 keeps out of the domain type; `TransportAvailability` is defined. **§11.4.6 gains `DatasetRepository.replaceAll` and STORE-4 fixes its transaction order** — §11.6.5 step 6 required an operation no interface could perform. §11.6.3 states per-platform write semantics: atomic on Windows, delete-then-rename on Android SAF, which has no atomic replace, with generation-numbered files recorded as the upgrade path; temp files are renamed, swept and made identifiable. §11.6.6 fixes an illegal Windows filename and de-duplicates backups, whose retention otherwise spanned five hours. §11.6.1 makes a peer snapshot all-or-nothing and `nameNormalized` write-only. §11.8's import is a merge, never a replace. §11.12 item 3 places the convergence simulation. |
@@ -953,7 +954,12 @@ Subtask order is the array order. `formatVersion` is checked on read; an unknown
 abstract interface class SyncTransport {
   String get id;                                        // 'file' | 'lan'
   Future<TransportAvailability> availability();
-  Future<List<SnapshotEnvelope>> fetchPeerSnapshots();
+  /// [local] is this replica's snapshot as step 2 captured it. A pull-only
+  /// transport ignores it; the LAN transport must send it to receive the
+  /// peer's in one round trip (§11.6.4). Passing it in rather than letting a
+  /// transport build its own keeps a single capture per pass — two captures
+  /// would let an edit between them make the two ends merge different inputs.
+  Future<List<SnapshotEnvelope>> fetchPeerSnapshots(SnapshotEnvelope local);
   Future<void> publish(SnapshotEnvelope envelope);
 }
 
@@ -1001,30 +1007,50 @@ Direct device-to-device sync over the local network, with no third party involve
 
 **Roles.** The **Windows app is the server**; the **Android app is the client**. This asymmetry is deliberate: Android restricts long-lived background servers, while the desktop is already running. A consequence is that a sync happens only while both apps are open on the same network, and only the phone can initiate. Document this in the UI ("Open Zen on your PC to sync"), and accept it as an MVP limitation.
 
+**Only the phone registers a transport.** The asymmetry above means the desktop never fetches and never publishes over LAN, so putting a `LanSyncTransport` in its `enabledTransports` would give the orchestrator a transport that always reports no peers and reports "published" for a write that never happened — a status line that is falsely green. Instead: on **Windows**, `syncLanEnabled` starts `LanSyncServer` and registers **no** transport, and the LAN status line reads the server's own state; on **Android**, it registers the transport and starts no server. The platform branch sits beside the existing `SnapshotDirectory` one. §11.6.5 is untouched.
+
 **Android local-network access.** At `targetSdk` 36 this needs **no special permission**: an app targeting SDK 36 or lower is granted local network access implicitly through `INTERNET`, and that implicit grant holds even on devices running Android 17. On Android 16 the restriction exists only as an opt-in that a developer enables deliberately (`adb shell am compat enable RESTRICT_LOCAL_NETWORK <package>`), which is also how to rehearse the future behaviour.
 
 `ACCESS_LOCAL_NETWORK` becomes mandatory only for apps that **target SDK 37 or higher**, where local network access — mDNS, SSDP, `.local` resolution, and outgoing *and* incoming TCP and UDP on the LAN — is blocked by default. So **raising `targetSdk` to 37 is the change that will break LAN sync**, silently and completely, unless the permission is declared and requested at runtime, or discovery moves to `NsdManager` with `DiscoveryRequest.FLAG_SHOW_PICKER`, whose returned host addresses are connectable without it. Record that here so a routine `targetSdk` bump does not quietly disable the feature.
 
 **Discovery.** The desktop registers `_zen-sync._tcp` on the default port **51789** (configurable) with TXT records `rid` (replicaId), `pv` (protocol version), `dn` (device name). The phone browses for it. mDNS is unreliable on some networks, so **a manual host:port entry is mandatory, not optional**, and the last successful address is remembered and tried first.
 
-**Pairing.** A pre-shared key (PSK), 32 random bytes, established once per device pair and stored on both.
+**Pairing.** A pre-shared key, 32 bytes from a CSPRNG, **generated afresh for each pairing** — never one key reused across devices. A shared key would let any paired phone decrypt and forge any other's traffic, which is a real defect the moment a third device exists, and an invisible one before that.
 
-*Open for M7:* §11.8 stores `syncLanPeers`, including each `psk`, in the settings key-value table of an unencrypted SQLite file. M6 defines that storage but puts nothing secret in it; M7 is the first milestone that does, and should decide then whether the key belongs in platform secure storage instead.
-
-1. Desktop: Settings → "Pair a device" opens a 5-minute pairing window, generates a single-use 6-digit code, and displays both a QR code and the code with the host and port in text.
+1. Desktop: Settings → "Pair a device" opens a 5-minute pairing window, generates a single-use 6-digit code, and displays both a QR code and the code with the host and port in text. The code comes from a CSPRNG, **keeps its leading zeros**, and is compared in **constant time** — six digits is short enough for a timing oracle to matter.
 2. Phone: scans the QR (`mobile_scanner`) or types host, port and code.
-3. Phone calls `POST /zen/v1/pair` with the code. The desktop verifies it, returns the PSK and its replicaId, then closes the window. The code is single-use and rate-limited to 5 attempts.
-4. Both store `{replicaId, deviceName, host, port, psk}`.
+3. Phone calls `POST /zen/v1/pair` with `{code, replicaId, deviceName, protocolVersion}`. Without the phone's identity the desktop has nothing to key a peer record on, which it needs in order to hold a per-pair key. The desktop verifies the code, generates that pair's key, returns it with its own `replicaId` and `deviceName`, and closes the window.
+4. Both store a peer record. **`host` and `port` are the client's fields only** — the phone runs no server, so the desktop's record carries identity and key alone and never dials anything.
 
-**Transport security.** Requests and responses carry an AES-GCM-256 encrypted body: key = HKDF-SHA256(psk, info `"zen-sync-v1"`), a **randomly generated** 12-byte nonce per message, body = `nonce || ciphertext || tag`, `Content-Type: application/octet-stream`. The plaintext JSON includes `sentAt`; a skew greater than 5 minutes is rejected, which blocks replay. The nonce MUST come from a cryptographically secure random source and MUST NOT be derived from a counter, a timestamp, or anything else that can repeat after a restart or a database restore: **reusing a nonce under one AES-GCM key is a total break**, leaking the authentication key and the XOR of the two plaintexts, and it is invisible to any test that does not look for it. This gives confidentiality and integrity without TLS certificate plumbing on a LAN. `/hello` is the only unencrypted endpoint and reveals nothing beyond a device name and protocol version.
+**Rate limiting is per pairing window, not per source.** Five failed attempts close the window. Per-IP limiting is bypassed by changing address; a global counter can be exhausted by an attacker to stop the user pairing, but that is a denial of service the user resolves by re-opening the window, and it bounds guessing to five tries against a million.
+
+**The QR payload is attacker-controlled input, and it decides where every future snapshot goes.** A QR naming an attacker's host yields a code, an attacker-chosen key, and the phone posting its entire dataset there on every pass. Two defences, and the second is the one that matters: the payload is a fixed, strictly parsed, length-capped structure whose unknown keys are refused; and **before sending the code the phone displays the host, port and device name it is about to pair with, and requires an explicit confirmation.**
+
+**Transport security.** Requests and responses carry an AES-GCM-256 encrypted body, `nonce || ciphertext || tag`, `Content-Type: application/octet-stream`.
+
+**Key derivation, stated exactly, because both ends must agree or nothing decrypts:** HKDF-SHA256 over the pair's key, **empty salt** (RFC 5869's zero-filled default), `info` = the UTF-8 bytes of `zen-sync-v1`, **32 bytes** of output. One key serves both directions. That is safe here only because the nonces are random rather than sequential: with random 96-bit nonces at this volume a collision is negligible, whereas sequential nonces from both ends under one key would collide immediately. Separate client and server keys would be stronger and are the obvious upgrade if `info` is ever revised.
+
+**Which key to try.** Because each pairing has its own key, a `/sync` body arrives as opaque bytes with nothing identifying the sender. The server **tries each paired peer's key in turn**; AES-GCM's tag makes the right one unambiguous and every wrong one fail cleanly. Peers number a handful, so the cost is trivial. The alternative — a plaintext `replicaId` alongside the ciphertext — would put a stable device identifier on the wire in exchange for nothing.
+
+**Freshness, and what it does and does not do.** The plaintext JSON carries `sentAt`, and a skew over 5 minutes is rejected. This **bounds** replay to a five-minute window; it does not block it. Within that window a captured `/sync` can be resent — the attacker cannot read the response, and re-merging a stale snapshot is idempotent and already accepted as safe by §9.4 and the import path, so a seen-nonce cache is not worth its state. What the check *does* break is two devices whose clocks differ by more than five minutes: they can never sync, and nothing about the failure says so. The status line for that case MUST name it: `"These devices' clocks are more than 5 minutes apart. Check the date and time on both."` The nonce MUST come from a cryptographically secure random source and MUST NOT be derived from a counter, a timestamp, or anything else that can repeat after a restart or a database restore: **reusing a nonce under one AES-GCM key is a total break**, leaking the authentication key and the XOR of the two plaintexts, and it is invisible to any test that does not look for it. This gives confidentiality and integrity without TLS certificate plumbing on a LAN. `/hello` is the only unencrypted endpoint and reveals nothing beyond a device name and protocol version.
 
 **Endpoints.**
 
-| Method | Path | Body | Response |
-|---|---|---|---|
-| GET | `/zen/v1/hello` | — | plaintext `{protocolVersion, replicaId, deviceName, appVersion}` |
-| POST | `/zen/v1/pair` | `{code}` | `{psk, replicaId, deviceName}`; 403 outside the pairing window |
-| POST | `/zen/v1/sync` | encrypted client `ReplicaSnapshot` | encrypted **server's own** `ReplicaSnapshot`, as it stood when the request arrived |
+| Method | Path | Body | Max | Response |
+|---|---|---|---|---|
+| GET | `/zen/v1/hello` | — | — | plaintext `{protocolVersion, replicaId, deviceName, appVersion}` |
+| POST | `/zen/v1/pair` | `{code, replicaId, deviceName, protocolVersion}` | 1 KiB | `{psk, replicaId, deviceName}`; 403 outside the window |
+| POST | `/zen/v1/sync` | encrypted §11.6.1 document + `sentAt` + `protocolVersion` | 16 MiB | encrypted **server's own** §11.6.1 document, as captured when the request arrived |
+
+**`protocolVersion` is `1`**, and it is *not* §11.6.1's `formatVersion` — one governs the wire exchange, the other the snapshot document. It is carried in `/hello`, in `/pair` and inside the `/sync` plaintext, and checked at each, so a client that skips `/hello` is still refused rather than half-understood.
+
+**The encrypted payload is the §11.6.1 document, not a bare `ReplicaSnapshot`.** A bare snapshot carries no `generatedAt`, `deviceName`, `appVersion` or `formatVersion`, so the transport could not build the `SnapshotEnvelope` that §11.6.5 step 3 de-duplicates on. Using the document the codec already writes is a gain rather than a patch: all-or-nothing record parsing, the `formatVersion` refusal and the `nameNormalized` warning (§11.6.1) then apply to LAN input for free — which is what a channel that accepts input from anyone on the Wi-Fi needs.
+
+**Bodies are capped before they are read into memory**, at the sizes above. Without a cap, anyone on the network can make the desktop buffer a gigabyte before the first decryption attempt. Over-cap requests are refused with 413.
+
+**Every client call is bounded by a timeout**: 3 s to connect, 30 s total for `/sync`, 4 s total for `/hello` and `/pair`. The exchange runs inside the orchestrator's single-flight lock (§11.6.5 step 1), so a desktop that accepts a connection and then stops answering — a sleeping laptop, a dropped Wi-Fi link, both of which §11.13.1 expects — would otherwise hang the pass forever, and every later trigger would join that dead future. A timeout is recorded as an ordinary per-transport failure. NFR-1's rule that no trigger may block the UI depends on this.
+
+**Status codes:** 400 malformed, 401 undecryptable, 403 outside the pairing window or bad code, 413 over cap, 429 after the fifth failed attempt.
 
 **The sync exchange is one round trip, and both ends merge independently.** The client posts its snapshot `C`. The server captures its own snapshot `S`, returns `S` unchanged, and then applies `merge([S, C])` locally in one transaction. The client, on receiving `S`, applies `merge([C, S])` locally.
 
@@ -1034,7 +1060,12 @@ Both sides therefore run the *same* merge over the *same* pair of inputs, and by
 - each device's local store is only ever written by its own merge, inside its own transaction, after its own pre-merge backup (§11.6.6);
 - an interrupted exchange is safe in both directions. If the response is lost, the client did not merge and simply syncs again; the server's merge is idempotent, so the repeat is a no-op.
 
-The server MUST capture `S` before applying its merge, so that the snapshot it returns and the one it merges are the same value.
+**The server does not implement this merge itself.** Steps 1, 4, 5, 6 and 8 of §11.6.5 — single-flight, pre-merge backup, merge, `replaceAll`, the `merged` events, `lastSyncAt` — already exist, and an HTTP handler re-implementing them would be a second copy of the most dangerous code in the project. The handler passes the client's envelope into the same entry point `"Import snapshot…"` uses, so an inbound sync is provably the same operation as an import.
+
+Two consequences, both accepted in writing rather than discovered later:
+
+- **An inbound phone sync also runs the desktop's other enabled transports**, so it reads and republishes the shared folder too. That is desirable — it propagates further per round — but it means a phone can cause a folder write.
+- **`S` is captured before the merge but not atomically with it.** The pass waits for any in-flight sync, so a timer pass landing in between means the `S` returned is not the `S` merged. The two ends then compute different merges, diverge by one round, and converge on the next — the same cost this design accepts elsewhere. Making it strict would mean capturing `S` inside the lock, which means a bespoke orchestrator entry point for a race whose window is a sub-second exchange against a 15-minute timer. Not worth it.
 
 **Protocol version mismatch** is refused with a clear message on both ends. Never attempt a best-effort merge across versions.
 
@@ -1086,7 +1117,7 @@ These extend §3.6. They are per replica and are never merged.
 | `syncFolderLocation` | string \| null | `null` | Directory path (Windows) or SAF tree URI (Android). |
 | `syncLanEnabled` | bool | `false` | LAN transport on/off. |
 | `syncLanPort` | int | `51789` | Desktop listen port. |
-| `syncLanPeers` | list | `[]` | Paired devices: `{replicaId, deviceName, host, port, psk}`. |
+| `syncLanPeers` | list | `[]` | Paired devices: `{replicaId, deviceName, host, port, psk}`. `host` and `port` are the **client's** fields; the desktop's records carry identity and key only, since the phone runs no server (§11.6.4). The key stays here rather than in platform secure storage: it protects a LAN channel between two devices the user owns, and anything able to read `zen.sqlite` can already read every idea and task in the clear — strictly more valuable than the key guarding their transport. Windows' DPAPI unlocks for any process running as the same user, and the Android keystore mainly adds a way to lose the key and a migration. |
 | `syncOnForeground` | bool | `true` | Sync when the app comes to the foreground. |
 | `syncIntervalMinutes` | int | `15` | Periodic sync while the app is open. `0` disables. |
 | `lastSyncAt` | timestamp \| null | `null` | Read-only display. |
@@ -1098,6 +1129,7 @@ The Settings screen gains a `"Sync"` section showing: each transport's toggle an
 ### 11.9 Build, packaging and distribution
 
 - **Windows:** `flutter build windows --release`, packaged with Inno Setup into a single installer. The binary is unsigned, so SmartScreen warns on first run; this is accepted rather than solved with a paid certificate.
+- **Android:** `android:allowBackup="false"` in the manifest. Unset, it defaults to **true**, and Android Auto Backup then copies the database — every idea, every task, and the pairing keys — to the user's Google Drive. That silently contradicts the premise the whole sync design is built on: no server, nothing leaving the local network (§13.1, A3). The cost is that a device transfer no longer carries the data, which is what LAN sync and `"Export snapshot…"` are for. Set it explicitly rather than inheriting the default.
 - **Android:** `flutter build apk --release`, signed with a local keystore and sideloaded. **Back up the keystore and its passwords off-device.** Losing them means a future install cannot upgrade in place and must be uninstalled first, which destroys the local database. This is the one irreversible operational mistake available in this project.
 - Play Store distribution is out of scope, so Play's target-API deadlines do not bind. `targetSdk` 36 is nonetheless the right setting for device compatibility.
 
