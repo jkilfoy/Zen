@@ -97,6 +97,29 @@ if (-not $AndroidOnly) {
 "@ -ForegroundColor Yellow
   }
 
+  # A running Zen holds a lock on zen_app.exe, and the linker cannot overwrite
+  # it. MSVC reports that as "LINK : fatal error LNK1104: cannot open file
+  # ...\zen_app.exe", which names the file but not the cause, and reads like a
+  # corrupt build directory. It is not: it is the application being open. This
+  # cost a diagnosis on the first real release build (D-M8-10).
+  #
+  # Deliberately not killed automatically -- a release build is no reason to
+  # terminate an app that could be mid-sync. Same reasoning as CloseApplications
+  # in zen.iss.
+  $running = Get-Process zen_app -ErrorAction SilentlyContinue
+  if ($running) {
+    $paths = ($running | ForEach-Object { $_.Path }) -join "`n    "
+    Fail @"
+Zen is running, so the linker cannot overwrite zen_app.exe.
+
+    $paths
+
+Close Zen and run this again. (Left unhandled, this surfaces as
+'LINK : fatal error LNK1104: cannot open file ...\zen_app.exe', which names the
+file but not the reason.)
+"@
+  }
+
   Step 'flutter build windows --release'
   Push-Location $appDir
   try {

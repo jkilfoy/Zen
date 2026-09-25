@@ -334,16 +334,28 @@ networks, so a manual host:port entry is mandatory, not optional."*
 
 ## M8 — packaging (needs an elevated PowerShell and the phone)
 
+> **M8: completed and accepted, 2026-09-25.** P-1 through P-24. The keystore
+> exists and is backed up off the machine; the development build was removed
+> from the phone, which is the last uninstall this project permits. Both
+> artifacts were built from `08a8c6d` and tagged `v1.0.0`, and **both upgrade in
+> place**. One defect surfaced on the first real build and is fixed: Zen was
+> running, so the linker could not overwrite `zen_app.exe`, and MSVC's `LNK1104`
+> does not name that cause — `package.ps1` now refuses it by name (D-M8-10).
+>
+> The steps below stand as the record of what was checked, and as the script to
+> re-run for every future release. P-1 to P-6 are once-only and were done.
+
 §11.13.1 puts **all** of M8 in the hardware column: "the Windows build needs
 Windows plus the VS 2022 C++ toolchain; the signed APK needs a keystore and a
-device to install on." Nothing below has been done by an agent. The packaging
-*scripts* were exercised as far as an unelevated session allows — `zen.iss`
-compiles, `package.ps1` parses the version and refuses correctly without a
-keystore, and the Gradle keystore guard fires on release and not on debug — but
-**no release artifact has ever been built, and no installer has ever been run.**
+device to install on." No agent can do any of it. What an agent could establish
+beforehand was established — `zen.iss` compiles, `package.ps1` parses the
+version and refuses correctly without a keystore, and the Gradle guard fires on
+release builds and not on debug ones — and the first run of the whole path,
+end to end, is the one recorded in the banner above.
 
-Work through it in order. P-1 to P-4 are once-only and set up the identity every
-future release depends on.
+Work through it in order. **P-1 to P-6 are once-only**: they create the signing
+identity every future release depends on, and they contain the last uninstall
+this project permits. P-7 onward is the script for every release after this one.
 
 ---
 

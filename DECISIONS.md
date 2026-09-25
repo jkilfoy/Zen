@@ -1480,6 +1480,25 @@ repository whose source is a few hundred kilobytes, and both are reproducible
 from the tag. Nothing in V1 distributes them from here; they are copied to the
 device by hand.
 
+**D-M8-10 — `package.ps1` refuses to build while Zen is running.**
+The first real release build failed with
+`LINK : fatal error LNK1104: cannot open file ...\zen_app.exe`. The cause was
+that Zen was open: a running executable is locked, and the linker cannot
+overwrite it. MSVC's message names the file and not the reason, and reads like a
+corrupt build directory — it cost a diagnosis, on the very first attempt, at the
+step this milestone exists to make repeatable.
+
+`tools/package.ps1` now checks for a `zen_app` process before building and fails
+with the reason and the process's path. It deliberately does **not** kill it: a
+release build is no reason to terminate an application that could be mid-sync,
+which is the same judgement `CloseApplications` makes in `zen.iss`.
+
+This is the sixth defect in the project found by running on real hardware rather
+than by the suite, after D-M6-20's two triggers, D-M6-21's spacing, D-M7-15's
+address selection and D-M7-17's error copy. It is the mildest of them and the
+most predictable in hindsight, which is the point: the packaging path had never
+been run start-to-finish by anyone, and the first run found something.
+
 ### What M8's automated checks establish, and what they do not
 
 Established on this machine, by running them:
@@ -1496,25 +1515,35 @@ Established on this machine, by running them:
 - `gradlew :app:assembleDebug --dry-run` succeeds and
   `gradlew :app:assembleRelease --dry-run` fails with D-M8-3's message.
 
-**Not established, and left to the owner's hardware run:**
+**Established on the owner's hardware, 2026-09-25**, over P-1 to P-24:
 
-- **No release build of either artifact has been produced by this session.**
-  `flutter build windows --release` needs symlink support — an elevated terminal
-  or Developer Mode (D-M4-16) — and this session has neither. The installer that
-  was compiled to prove the script works used the **existing M7 bundle** and a
-  throwaway `0.0.0` version, and was deleted. Nothing version-stamped `1.0.0`
-  exists yet.
-- **No installer has been run.** Whether it installs, whether SmartScreen
-  behaves as §11.9 expects, whether the Start menu entry works, and whether a
-  second install upgrades in place rather than doubling up are all unobserved.
-- **No signed APK exists,** because no keystore exists.
-- **The app-local VC++ runtime has not been tested on a machine without the
-  redistributable,** which is the only machine where it matters. Short of a
-  clean VM, the achievable check is that the DLLs are present in `{app}` after
-  an install, which is step P-6.
+- Both artifacts were built by `tools/package.ps1` and both install and run.
+- The Windows installer behaves as §11.9 designed it: SmartScreen warns, **no
+  UAC prompt** appears, the existing database in `%APPDATA%\dev.zen\Zen`
+  survives untouched, the three VC++ redistributable DLLs are present in
+  `{app}`, About reads `Zen 1.0.0+1 · specification v1.15`, and Apps & features
+  shows exactly one Zen. **Re-running the same installer upgrades in place** and
+  still leaves one entry — which is what D-M8-4's fixed `AppId` is for.
+- The APK is signed with the real keystore, not the debug key, installs on the
+  device, reports `versionCode=1` / `versionName=1.0.0` with `ALLOW_BACKUP`
+  absent, and **upgrades itself in place**.
+- A release-to-release LAN sync between the two works, so nothing in the
+  transport depends on the debug toolchain path.
+- The keystore exists, its SHA-256 fingerprint is recorded, and **the owner has
+  confirmed it is backed up off this machine** (D-M8-8, P-3).
 
-This is the same shape as M6 and M7, where hardware found five defects that the
-suite could not. `MANUAL_VERIFICATION.md` section **M8** is the checklist.
+**Residual, and stated rather than hidden:**
+
+- **P-23, the clean-machine install, is the one step whose outcome the record
+  cannot infer** — it is conditional on a spare Windows machine or VM being
+  available, and instructs the owner to skip and say so if not. P-13 proves the
+  three VC++ DLLs **ship** in `{app}`; only P-23 proves they are **sufficient**
+  on a machine with no redistributable installed. If it was skipped, that
+  remains reasoned about rather than observed.
+- **`v1.0.0` marks `08a8c6d`**, which is the commit both artifacts were built
+  from. Commits after it — D-M8-10's guard, and this record — are deliberately
+  not in the tag: the tag names what was verified, not what the branch has since
+  become.
 
 ---
 
@@ -1525,7 +1554,7 @@ that has never run.
 
 | Milestone | Verified | How |
 |---|---|---|
-| M8 | **Not yet** — awaiting the owner's hardware run and the keystore | The headless half is done and green: the full suite is at **957 tests** (349 `zen_domain`, 180 `zen_sync`, 207 `zen_data`, 221 `zen_app`), with `dart analyze --fatal-infos --fatal-warnings` and `dart format` clean, and CI green on the GitHub runner. The packaging path is proven as far as this environment allows: `zen.iss` compiles under Inno Setup 6.7.3 into a 12.4 MB installer carrying the Flutter bundle and the three VC++ redistributable DLLs; it refuses to compile without the defines `tools/package.ps1` passes; `package.ps1` reads `1.0.0+1` from `pubspec.yaml`, locates Inno Setup and the redistributable, and refuses the Android half with a full explanation when the keystore is absent; and `gradlew :app:assembleRelease --dry-run` fails with D-M8-3's message while `assembleDebug` still succeeds. **What is not established:** no release build of either artifact exists. §11.13.1 puts all of M8 in the hardware column, and it is right — `flutter build windows --release` needs an elevated terminal (D-M4-16) and the signed APK needs a keystore that does not yet exist (D-M8-8). No installer has been run, so nothing is known about SmartScreen, the Start menu entry, or install-over-the-top. `MANUAL_VERIFICATION.md` section **M8** (P-1 to P-16) is the checklist. |
+| M8 | **Yes** | **Confirmed by hand on 2026-09-25:** the owner worked P-1 through P-24. The keystore was created and **backed up off this machine**; the development build was removed from the phone, which is the last uninstall this project permits. `tools/package.ps1` built both artifacts from `08a8c6d`, tagged `v1.0.0`. **The installer upgrades in place and the APK upgrades in place** — the two behaviours the whole milestone is built around — with exactly one entry in Apps & features and the database in `%APPDATA%\dev.zen\Zen` untouched. About reads `Zen 1.0.0+1 · specification v1.15` on both platforms, the APK is signed with the real key rather than the debug key, `ALLOW_BACKUP` is absent, and a release-to-release LAN sync works. The headless suite is green at **957 tests** (349 `zen_domain`, 180 `zen_sync`, 207 `zen_data`, 221 `zen_app`), `dart analyze --fatal-infos --fatal-warnings` and `dart format` clean, and CI green on the GitHub runner. **What the checks did not catch:** D-M8-10 — the first release build failed with `LNK1104` because Zen was running, a cause MSVC's message does not name. `package.ps1` now refuses that case by name. P-23, the clean-machine install, is conditional and is the one residual above. |
 | M7 | **Yes** | **Confirmed by hand on 2026-09-25:** the owner built and deployed to Windows and to a real Android 13 device (Galaxy S20 FE) and ran **L-1 through L-18**; **L-19** was confirmed directly from `dumpsys package dev.zen.zen_app`, whose flags read `[ HAS_CODE ALLOW_CLEAR_USER_DATA ]` with `ALLOW_BACKUP` absent. §11.13.1's hardware column for M7 is satisfied: mDNS across two hosts, the Windows Firewall prompt, a Wi-Fi drop-out and real QR scanning were all exercised, as were `nsd`, `mobile_scanner` and the Windows release build — none of which had ever run before this. The headless suite is green at 956 tests: 349 in `zen_domain`, 180 in `zen_sync`, 207 in `zen_data`, 220 in `zen_app`, with `dart analyze --fatal-infos --fatal-warnings` and `dart format` clean across all four packages. **What the suite did not catch:** D-M7-15, which stopped the feature working at all on the owner's machine — the PC advertised WSL2's host-only `172.26.240.1` and no phone could reach it. 77 passing M7 tests were silent on it because they run against loopback, and `127.0.0.1` is always reachable: an address-selection bug cannot exist in the configuration the tests use. D-M7-17 came from the same run. Both now have regression tests, written only once hardware pointed at them — the fourth and fifth defects of the project to arrive that way. |
 | M6 | **Yes** | **Confirmed by hand on 2026-09-24:** the owner built and deployed to Windows and to a real Android device and ran **S-1 through S-32** — the Windows folder sync, the whole Android SAF path including persisted grants and revocation, export, import and restore, the recovery screen, the trigger behaviour after D-M6-20, and the button spacing of D-M6-21. §11.13.1’s hardware column for M6 is satisfied: "The Android SAF path needs a real device and is verified by hand." The two silent failure modes feared beforehand — SAF mangling the `.json` extension, and delete-then-rename leaving a `… (1).json` duplicate — did not occur. The headless suite is green at 859 tests: 349 in `zen_domain`, 89 in `zen_sync`, 207 in `zen_data`, 214 in `zen_app`. **The convergence simulation of §11.12 item 3 passes over 60 seeds**, against two real Drift databases exchanging snapshots through a real shared directory, asserting the replicas are field-for-field identical and that every §3.7 invariant holds; its coverage assertion requires all sixteen user operations to occur across the seeds, and it is what caught the archive sweep never firing (D-M6-13). `dart analyze --fatal-infos --fatal-warnings` clean across all four packages, `dart format` clean. **`LanSyncTransport` is deliberately absent** — it is M7 — and the orchestrator is already n-ary and multi-transport, with a two-transport test to prove it. **What the suite did not catch:** three defects came from the hardware and not from 854 passing tests — the two triggers of D-M6-20, which needed a desktop window manager and a completed pass, and the button spacing of D-M6-21. All three now have regression tests, written only once hardware pointed at them. |
 | M5 | **Yes** | §5 is fully implemented and 87 tests are green under `flutter test` in `zen_app`. **AC-4** and **AC-5** pass on the Edit Task screen, **AC-10** passes through the Archived Tasks UI *and* through Search's Restore, and **AC-11** passes via the Edit Idea entry point as well as `"Make Task"`. §11.12 item 6's golden tests exist for all three TODO-3 circle states and all three disabled variants — **on Windows only** (D-M4-8); CI skips them. HOME-5's five shortcuts, NFR-7 at 400 px, ROW-5's three distances and §11.5.5's recovery screen each have a test. Confirmed by hand on **2026-09-24** alongside M4, over the whole of `MANUAL_VERIFICATION.md`. |

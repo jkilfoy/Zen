@@ -133,6 +133,10 @@ plausibly affect any of it.
 
 ## Cutting a release
 
+**V1 shipped as `1.0.0+1` on 2026-09-25**, tagged `v1.0.0`, built and verified on Windows 10
+and a Galaxy S20 FE running Android 13. `MANUAL_VERIFICATION.md` section M8 is the
+record of what was checked, and the script to re-run for the next release.
+
 §11.9. Both artifacts are built locally, from an **elevated** PowerShell:
 
 ```powershell
@@ -194,4 +198,4 @@ still waiting on real hardware (§11.13.1).
 | M5 — remaining screens | **done** — §5 fully implemented; goldens run on Windows only (D-M4-8) |
 | M6 — `zen_sync` core | **done** — S-1 to S-32 confirmed by hand on Windows and a real Android device, including the whole SAF path. Three defects found there and fixed (D-M6-20, D-M6-21) |
 | M7 — LAN transport | **done** — L-1 to L-19 confirmed by hand on Windows and a real Android 13 device. One defect found there that the 77 loopback tests could not see: the PC advertised WSL2's virtual adapter (D-M7-15) |
-| M8 — packaging | **scripts done, artifacts pending** — the installer script, the signing config and `tools/package.ps1` are written and exercised; no release build exists yet, because §11.13.1 puts all of M8 on real hardware. `MANUAL_VERIFICATION.md` section M8 is the checklist |
+| M8 — packaging | **done** — P-1 to P-24 confirmed by hand. Both artifacts build from `tools/package.ps1`, install, and **upgrade in place**, which is the behaviour the milestone exists for. One defect found on the first real build: D-M8-10 |
