@@ -76,8 +76,14 @@ final class FileSnapshotTransport implements SyncTransport {
   /// disagree whenever a file is copied or renamed by hand. Skip any file whose
   /// body carries this device's own `replicaId`. A file that fails to parse is
   /// skipped with a logged warning, never allowed to abort the sync."
+  ///
+  /// [local] is ignored: §11.6.2 passes it for the LAN transport's round trip,
+  /// and a directory needs no telling what this device holds. Step 7's
+  /// [publish] is where this transport makes itself visible.
   @override
-  Future<List<SnapshotEnvelope>> fetchPeerSnapshots() async {
+  Future<List<SnapshotEnvelope>> fetchPeerSnapshots(
+    SnapshotEnvelope local,
+  ) async {
     final List<String> names = await _directory.listNames();
     final List<SnapshotEnvelope> peers = <SnapshotEnvelope>[];
     // Sorted so that two runs over the same folder report their warnings in the

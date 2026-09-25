@@ -87,9 +87,8 @@ four months.
 | Device time zone | `flutter_timezone` | `^5.1.0` | **5.1.0** | **Not in §11.2's table** — see D-M4-3. |
 | Database (test only) | `drift` | `^2.35.0` | **2.35.0** | A dev dependency: the widget tests build `NativeDatabase.memory()` directly rather than mocking the repositories (D-M4-15). |
 
-`shelf`, `http`, `cryptography`, `nsd`, `qr_flutter` and `mobile_scanner` are
-still unresolved: they are M7's, and §11.2 says to check each at the milestone
-that first needs it.
+`shelf`, `http`, `cryptography`, `nsd`, `qr_flutter` and `mobile_scanner` were
+M7's and are resolved below.
 
 ### `zen_sync` and the sync platform glue (M6)
 
@@ -110,6 +109,26 @@ state, as §11.2 requires.
 `file_selector` pulls in `file_selector_android`, which implements `openFile`,
 `openFiles` and `getDirectoryPath` — and **no save dialog**. That gap is what
 D-M6-11 is about.
+
+### `zen_sync` LAN and the pairing UI (M7)
+
+Resolved by `flutter pub get` on 2026-09-25 and taken from `pubspec.lock`. Each
+was checked on pub.dev for its current version, null-safety status and
+maintenance state, as §11.2 requires.
+
+| Role | Package | Constraint | **Resolved** | Notes |
+|---|---|---|---|---|
+| LAN server | `shelf` | `^1.4.2` | **1.4.2** | `zen_sync`. dart.dev. Pure Dart, and depended on unconditionally — the phone never serves, but one package builds for both platforms. |
+| LAN routing | `shelf_router` | `^1.1.4` | **1.1.4** | `zen_sync`. dart.dev. Last published 2023-05; three routes, and the API is stable. |
+| LAN client | `http` | `^1.6.0` | **1.6.0** | `zen_sync`. Published 2025-11-10. `IOClient` over an `HttpClient` carrying §11.6.4's connect timeout. |
+| Crypto | `cryptography` | `^2.9.0` | **2.9.0** | `zen_sync`. Published 2025-11-21. `AesGcm.with256bits()` and `Hkdf(Hmac.sha256())`. **Pure Dart**: its dependencies are `collection`, `crypto`, `ffi`, `meta` and `typed_data`, and it declares no Flutter binding, so `dart test` still runs `zen_sync` headlessly. `pointycastle` was §11.2's named alternative and is not needed. |
+| Service discovery | `nsd` | `^5.0.1` | **5.0.1** | `zen_app`. Published 2026-04-04. §11.2 requires **both** registration and discovery: `nsd_android` **and** `nsd_windows` implementations both resolve, which is why `flutter_nsd` (discovery-only) is insufficient and `bonsoir` is not needed. |
+| QR display | `qr_flutter` | `^4.1.0` | **4.1.0** | `zen_app`. Pure Dart rendering, so it builds on both platforms. **Last published 2023-05**, which is the stalest dependency in the project; it resolves and renders, and the payload is a short URI, so the risk is low and named rather than hidden. |
+| QR scanning | `mobile_scanner` | `^7.4.2` | **7.4.2** | `zen_app`. Published 2026-09-14. Android, iOS, macOS and web — **no Windows implementation**, which is consistent with §11.6.4: the desktop is the server and has nothing to scan. |
+
+`nsd` pulls `nsd_android`, `nsd_ios`, `nsd_macos`, `nsd_windows` and
+`nsd_platform_interface`; `qr_flutter` pulls `qr`. None reaches `zen_domain`,
+whose allow-list is unchanged (`architecture_test.dart`).
 
 ---
 
@@ -1039,6 +1058,187 @@ row the user cannot even see is not worth taking the app down over. It now uses
 
 ---
 
+## M7 — `LanSyncTransport`
+
+Fourteen ambiguities in §11.6.4 were found before any code was written and put
+to the owner; all fourteen were accepted and folded into **`ZEN_SPEC.md` v1.14**,
+so they are specification, not decisions, and are not repeated here. Four of
+them were defects that would have shipped:
+
+* **`fetchPeerSnapshots()` could not express a request/response exchange.** The
+  signature took no arguments, because the file transport is a pure pull. The
+  LAN client has to *send* `C` to receive `S`, and nothing in §11.6.4 said where
+  `C` came from — so the transport had no snapshot to post. This is M6's
+  §11.6.2 defect recurring in a new shape, and it is why §11.6.2 now reads
+  `fetchPeerSnapshots(SnapshotEnvelope local)`.
+* **The desktop could not record who it paired with.** `POST /pair` carried
+  `{code}` alone, so the phone's `replicaId` never reached the desktop, which
+  §11.8's peer record is keyed on.
+* **One key for every phone.** "Returns the PSK" read as a single shared key;
+  with two phones paired, either could decrypt and forge the other's traffic.
+  Invisible until a third device exists.
+* **No timeouts.** The exchange runs inside the single-flight lock, so a
+  desktop that accepted a connection and then stopped answering would have hung
+  the pass forever and every later trigger would have joined that dead future.
+
+What follows is what the specification left open and this milestone chose.
+
+**D-M7-1 — The LAN protocol lives in `zen_sync`; discovery, QR and the screens
+live in `zen_app`.**
+`shelf`, `shelf_router`, `http` and `cryptography` are pure Dart — `cryptography`
+declares no Flutter binding and depends only on `collection`, `crypto`, `ffi`,
+`meta` and `typed_data` — so the server, the client, the crypto and the transport
+all sit in `zen_sync` and run under `dart test`. `nsd`, `qr_flutter` and
+`mobile_scanner` are Flutter, so mDNS goes behind a `PeerDiscovery` port with
+`NsdPeerDiscovery` in `zen_app`, exactly as `SnapshotDirectory` and
+`SafSnapshotDirectory` are split (D-M6-1). The payoff is the same: everything
+§11.6.4 actually specifies — the endpoints, the caps, the status codes, the key
+derivation, the trial decryption, the freshness check, the one-round exchange —
+is tested headlessly against a real loopback listener, and what is left
+unverifiable is only mDNS on a real network and a real camera (§11.13.1).
+
+**D-M7-2 — The pairing key stays in the settings table, and `allowBackup` is
+turned off.**
+§11.6.4 left this open for M7 and v1.14 closes it in §11.8: the key protects a
+LAN channel between two devices the user owns, and anything able to read
+`zen.sqlite` can already read every idea and task in the clear — strictly more
+valuable than the key guarding their transport. Windows' DPAPI unlocks for any
+process running as the same user, so secure storage buys close to nothing there;
+the Android keystore mainly adds a way to lose the key and a migration.
+
+The exposure that *did* need closing was a different one: `android:allowBackup`
+was unset and therefore **true**, so Android Auto Backup could copy the database
+— ideas, tasks and pairing keys — to the user's Google Drive. §11.9 now sets it
+to `false` explicitly. The cost is that a device transfer no longer carries the
+data; LAN sync and `"Export snapshot…"` are what carry it instead.
+
+**D-M7-3 — `availability()` does not probe the network.**
+§11.6.2 gives no guidance on cost. A probe would spend a round trip before the
+round trip that follows it, and would turn one timeout into two inside the
+single-flight lock. So it answers the one question it can answer without the
+network — whether anything is paired — and an unreachable desktop surfaces from
+the fetch as an ordinary per-transport failure carrying §11.6.4's copy, which is
+what §11.6.5 step 3 is built to handle.
+
+**D-M7-4 — The QR payload is `zen-pair:v1?host=…&port=…&code=…&rid=…&dn=…`.**
+§11.6.4 requires "a fixed, strictly parsed, length-capped structure whose
+unknown keys are refused" without naming one. A URI rather than JSON because a
+scanner hands back a string and `Uri.parse` already refuses most of what is not
+one; a version in the path so a future shape is rejected rather than
+half-understood; unknown keys refused, so a payload carrying a field this
+version does not understand is not acted on.
+
+**D-M7-5 — A peer's `deviceName` is refused, not sanitised, when it carries
+control or format characters.**
+The name is stored and then rendered in a list beside other devices'. A name
+carrying a bidirectional override can make itself render as another device's,
+which is a spoof the user cannot see. Stripping the characters would leave a
+name that no longer matches what the other device displays, so it is refused
+with a 400 instead. A *leading* byte-order mark is the exception and trims away
+as whitespace, which the tests pin, because the resulting name is already clean.
+
+**D-M7-6 — A paired peer sending another replica's `replicaId` is logged, not
+refused.**
+The merge is content-based and tombstone-safe, so acting on it is harmless, and
+a `replicaId` can legitimately change after a database restore. Refusing would
+break that case. But a paired device presenting another's identity would
+otherwise be completely silent, so it produces a warning.
+
+**D-M7-7 — `/sync` refusals are sealed; `/pair` and pre-identification refusals
+are not.**
+Once a body has been opened, the sender holds a key and is entitled to read why
+it was refused — and the copy matters most in exactly that case, because
+§11.6.4's mandated clock-skew message is what stops a permanently failing sync
+being a mystery. Before identification there is no key to seal with, so those
+refusals are plain text, say only what went wrong, and reveal nothing about this
+device. `/hello` stays the only endpoint that discloses identity.
+
+**D-M7-8 — `LanClient` takes an injectable `syncTimeout`.**
+The only configuration this milestone adds, against §11.13's preference for
+deleting code over adding it. The justification is that §11.6.4 makes the
+timeout load-bearing — "NFR-1's rule that no trigger may block the UI depends on
+this" — and an untested timeout is not a timeout. The test that proves a hung
+desktop does not hang the pass needs a server that never answers and a timeout
+shorter than the test framework's own. Production takes the spec's 30 s.
+
+That test earned its keep immediately: it found that the timeout covered only
+*reading* the response and not `send`, so a desktop which accepted the
+connection and then went quiet hung the pass forever — the exact failure
+§11.6.4 says NFR-1 depends on this timeout to prevent.
+
+**D-M7-9 — The nonce source is deliberately not injectable.**
+§11.6.4 is emphatic that a nonce must never come from a counter or a timestamp,
+and that reuse "is invisible to any test that does not look for it". A seam for
+the random source is precisely how a seeded `Random` would get in, and no test
+would notice. So `Random.secure()` is a private top-level field with no
+override, and the property is tested directly instead: five hundred seals under
+one key, five hundred distinct nonces.
+
+**D-M7-10 — The desktop's LAN server binds `0.0.0.0`, and a busy port is
+reported rather than worked around.**
+A LAN peer reaches this device by its LAN address, so binding loopback would
+make the feature unreachable by construction; this is also what raises the
+Windows Firewall prompt §11.13.1 predicts. A port already in use is surfaced in
+the Settings status line and not retried elsewhere: the phone was told a port,
+and silently moving would leave it dialling a door that is no longer there. The
+bind address is a parameter only so the tests can use loopback.
+
+**D-M7-11 — Opening the desktop's pairing screen opens the window, and leaving
+it closes the window.**
+§11.6.4 says the menu item "opens a 5-minute pairing window" without saying when
+the code appears. A screen showing no code plus a button to produce one is a
+step that exists only because it was easier to build. Leaving closes it, because
+a live code behind a closed screen is a credential nobody is watching.
+
+**D-M7-12 — The phone confirms against `/hello`'s device name, not the QR's.**
+§11.6.4 requires the phone to display "the host, port and device name it is
+about to pair with". The QR's `dn` is the attacker's own claim in the attack
+this defends against, so the name shown is the one *that host* reports when
+asked. A hostile host can lie there too — which is why the **address** is shown
+first and largest. It is the field the user can actually check.
+
+**D-M7-13 — Widget tests bind no socket.**
+`lanSyncServerProvider` is overridden to `null` in the harness. The protocol
+belongs to `zen_sync`'s suite, where a real loopback listener exercises it
+properly; in a widget test a real server would bind a real port on the machine
+running the suite, and two tests at once would collide on it. What the widget
+tests cover is the section's wiring, and `isLanClientProvider` lets both halves
+of §11.6.4's asymmetry be rendered on one host.
+
+**D-M7-14 — Unpairing is one-sided, and the confirmation says so.**
+Nothing in the protocol lets one device revoke the other's record, and adding a
+revocation call would be product behaviour §11.6.4 does not describe. So the
+confirmation states it: the other device keeps a key that no longer opens
+anything, and its own list is where it is removed from.
+
+### What M7's automated tests do not establish
+
+- **No two-device run has happened.** Everything is loopback: one process, one
+  machine, no Wi-Fi, no firewall, no router that blocks multicast. §11.13.1 puts
+  "mDNS discovery across two hosts, Windows Firewall prompts, Wi-Fi drop-outs,
+  real QR scanning" in the hardware column, and all four are unexercised.
+- **`nsd` has never run.** `NsdPeerDiscovery` and `NsdServiceRegistration` are
+  the one part of M7 with no test at all, because both need a platform channel.
+  Registration on Windows in particular depends on a responder that may not be
+  installed. The design assumes it can fail — manual host:port entry is
+  mandatory for exactly this reason — but "assumes it can fail" is not the same
+  as having watched it fail.
+- **`mobile_scanner` has never run,** and the camera permission has never been
+  requested on a device.
+- **The Windows build is still unverified** for the same reason as M6: it needs
+  an elevated terminal or Developer Mode (D-M4-16). `nsd_windows` is a new
+  native plugin registered there. `mobile_scanner` has no Windows
+  implementation at all, which is why the scan screen is Android-only.
+- **`targetSdk` 37 is unreachable from here.** The owner's device runs Android
+  13, so the local-network restriction §11.6.4 warns about can never be observed
+  by hand. The manifest carries the warning in a comment beside the permission.
+- **Replay inside the five-minute window is accepted, not prevented.** v1.14
+  states this plainly. The cost is bounded — the attacker cannot read the
+  response, and re-merging a stale snapshot is the operation the import path
+  already accepts — but nothing tests an actual replay, because nothing
+  currently stops one.
+---
+
 ## Verification status (§11.13.1)
 
 §11.13.1 requires that no milestone be reported done on the strength of code
@@ -1046,6 +1246,7 @@ that has never run.
 
 | Milestone | Verified | How |
 |---|---|---|
+| M7 | **No — code complete, hardware outstanding** | Everything in §11.13.1's left-hand column is proved: **77 M7 tests** in `zen_sync` against a real `shelf` listener on `127.0.0.1` reached with a real HTTP client, covering the three endpoints, the 1 KiB and 16 MiB body caps, every status code, HKDF's pinned salt and length, per-pairing keys, trial decryption past two wrong keys, nonce freshness over five hundred seals, the constant-time code comparison, the five-attempt window, the clock-skew copy verbatim, §11.6.1's all-or-nothing parsing reaching LAN input, and the **full one-round-trip exchange in which two orchestrators over two datasets converge field-for-field and a second pass changes nothing**. Plus six more in `zen_app`: five widget tests over §11.8's LAN section, rendering both halves of §11.6.4's asymmetry on one host, and one controller test for the PC's LAN-only status line. **The suite is green at 942 tests** — 349 in `zen_domain`, 166 in `zen_sync`, 207 in `zen_data`, 220 in `zen_app` — with `dart analyze --fatal-infos --fatal-warnings` and `dart format` clean across all four packages, and the §11.12 item 3 convergence simulation still passing over its 60 seeds. **The hardware column is entirely unmet**: no two-device run, no mDNS across hosts, no Windows Firewall prompt, no Wi-Fi drop-out, no real QR scan, and `nsd`, `mobile_scanner` and the Windows build have never run at all. **L-1 to L-19 in `MANUAL_VERIFICATION.md` are the checklist**, and the milestone is not done until the owner confirms them. **One defect the suite did catch before any hardware could:** the client timeout wrapped only the response read and not `send`, so a desktop that accepted a connection and then went silent would have hung the pass forever, taking every later trigger with it — the exact NFR-1 failure §11.6.4 says the timeout exists to prevent. It was found by the loopback test that never answers, not by review. |
 | M6 | **Yes** | **Confirmed by hand on 2026-09-24:** the owner built and deployed to Windows and to a real Android device and ran **S-1 through S-32** — the Windows folder sync, the whole Android SAF path including persisted grants and revocation, export, import and restore, the recovery screen, the trigger behaviour after D-M6-20, and the button spacing of D-M6-21. §11.13.1’s hardware column for M6 is satisfied: "The Android SAF path needs a real device and is verified by hand." The two silent failure modes feared beforehand — SAF mangling the `.json` extension, and delete-then-rename leaving a `… (1).json` duplicate — did not occur. The headless suite is green at 859 tests: 349 in `zen_domain`, 89 in `zen_sync`, 207 in `zen_data`, 214 in `zen_app`. **The convergence simulation of §11.12 item 3 passes over 60 seeds**, against two real Drift databases exchanging snapshots through a real shared directory, asserting the replicas are field-for-field identical and that every §3.7 invariant holds; its coverage assertion requires all sixteen user operations to occur across the seeds, and it is what caught the archive sweep never firing (D-M6-13). `dart analyze --fatal-infos --fatal-warnings` clean across all four packages, `dart format` clean. **`LanSyncTransport` is deliberately absent** — it is M7 — and the orchestrator is already n-ary and multi-transport, with a two-transport test to prove it. **What the suite did not catch:** three defects came from the hardware and not from 854 passing tests — the two triggers of D-M6-20, which needed a desktop window manager and a completed pass, and the button spacing of D-M6-21. All three now have regression tests, written only once hardware pointed at them. |
 | M5 | **Yes** | §5 is fully implemented and 87 tests are green under `flutter test` in `zen_app`. **AC-4** and **AC-5** pass on the Edit Task screen, **AC-10** passes through the Archived Tasks UI *and* through Search's Restore, and **AC-11** passes via the Edit Idea entry point as well as `"Make Task"`. §11.12 item 6's golden tests exist for all three TODO-3 circle states and all three disabled variants — **on Windows only** (D-M4-8); CI skips them. HOME-5's five shortcuts, NFR-7 at 400 px, ROW-5's three distances and §11.5.5's recovery screen each have a test. Confirmed by hand on **2026-09-24** alongside M4, over the whole of `MANUAL_VERIFICATION.md`. |
 | M4 | **Yes** | The headless half: 349 tests in `zen_domain` (36 new, for `updateTask`, `logicalDayOf` and `SearchQuery`), 182 in `zen_data`, 87 in `zen_app`. **AC-1, AC-2, AC-3, AC-7** pass again as widget tests against a real in-memory database, and **AC-8, AC-9, AC-11, AC-12** pass through the screens. `dart analyze --fatal-infos --fatal-warnings` clean across all four packages, `dart format` clean. **"The app runs on both platforms" is now established by hand,** on **2026-09-24**, against `MANUAL_VERIFICATION.md`: W-1 through W-12 on Windows 10 22H2 built with Visual Studio Build Tools 2022 17.14.41, and A-1 through A-9 plus Z-1 and Z-2 on an `android-36.1` `x86_64` emulator (`Medium-Phone-API-36.1`). All accepted by the owner. Getting there needed three toolchain changes, none of them code: the VS 2022 C++ workload with CMake tools and the Windows 10 SDK, Android `cmdline-tools` plus accepted licences, and NDK 28.2.13676358 installed by hand (D-M4-16). Windows builds are run from an elevated terminal in place of Developer Mode, which is the owner's standing choice. **NFR-2 is measured and met:** about **500 ms** cold from the home screen on the phone, against a target of "under 1.5 s on a mid-range Android device". D-M4-17 has the `--trace-startup` split. |

@@ -40,8 +40,18 @@ final class FakeTransport implements SyncTransport {
       ? const TransportAvailability.reachable()
       : const TransportAvailability.unreachable('not available');
 
+  /// §11.6.2. What step 2 captured and handed to this transport.
+  ///
+  /// Recorded rather than ignored: the LAN transport's whole purpose is to send
+  /// it, so a test that the orchestrator passes the right value is worth having
+  /// even for a fake that does not need it.
+  SnapshotEnvelope? fetchedWith;
+
   @override
-  Future<List<SnapshotEnvelope>> fetchPeerSnapshots() async {
+  Future<List<SnapshotEnvelope>> fetchPeerSnapshots(
+    SnapshotEnvelope local,
+  ) async {
+    fetchedWith = local;
     if (fetchError case final Object error) {
       throw error;
     }
@@ -604,8 +614,9 @@ final class _ThrowingAvailability implements SyncTransport {
       throw StateError('grant revoked');
 
   @override
-  Future<List<SnapshotEnvelope>> fetchPeerSnapshots() async =>
-      <SnapshotEnvelope>[];
+  Future<List<SnapshotEnvelope>> fetchPeerSnapshots(
+    SnapshotEnvelope local,
+  ) async => <SnapshotEnvelope>[];
 
   @override
   Future<void> publish(SnapshotEnvelope envelope) async {}

@@ -1,8 +1,35 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- SPEC 11.6.4, 11.2. LAN sync needs no special permission at targetSdk 36:
+         an app targeting SDK 36 or lower is granted local network access
+         implicitly through INTERNET, and that implicit grant holds even on
+         devices running Android 17.
+
+         ACCESS_LOCAL_NETWORK becomes mandatory only at targetSdk 37 or higher,
+         where mDNS, .local resolution and outgoing and incoming LAN TCP/UDP are
+         all blocked by default. Raising targetSdk to 37 in build.gradle.kts is
+         therefore the change that will break LAN sync, silently and completely,
+         unless that permission is declared and requested at runtime or
+         discovery moves to NsdManager with DiscoveryRequest.FLAG_SHOW_PICKER.
+         The owner's device runs Android 13, so no manual check will ever catch
+         this: it has to be reasoned about (SPEC 11.13.1). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- SPEC 11.6.4 step 2. Scanning the desktop's pairing QR code.
+         `required="false"`: typing the host, port and code is a first-class
+         path, not a fallback, so a device with no camera must still install. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- SPEC 11.9. `allowBackup` unset defaults to TRUE, and Android Auto
+         Backup then copies the database - every idea, every task, and the LAN
+         pairing keys - to the user's Google Drive. That silently contradicts
+         the premise the whole sync design rests on: no server, nothing leaving
+         the local network (SPEC 13.1, A3). The cost is that a device transfer
+         no longer carries the data, which is what LAN sync and
+         "Export snapshot..." are for. Set explicitly rather than inherited. -->
     <application
         android:label="Zen"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"

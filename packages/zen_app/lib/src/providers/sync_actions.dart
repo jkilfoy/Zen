@@ -57,7 +57,10 @@ final class SyncController extends Notifier<SyncState> {
       final SyncOutcome outcome = await ref
           .read(syncOrchestratorProvider)
           .sync();
-      state = SyncState(outcome: outcome, message: _describe(outcome));
+      state = SyncState(
+        outcome: outcome,
+        message: _describe(outcome, lanServes: await _lanServes()),
+      );
       return outcome;
     } on Object {
       // The orchestrator catches everything it can name and reports it in the
@@ -167,7 +170,10 @@ final class SyncController extends Notifier<SyncState> {
     final SyncOutcome outcome = await ref
         .read(syncOrchestratorProvider)
         .syncWith(<SnapshotEnvelope>[envelope]);
-    state = SyncState(outcome: outcome, message: _describe(outcome));
+    state = SyncState(
+      outcome: outcome,
+      message: _describe(outcome, lanServes: await _lanServes()),
+    );
     return state.message!;
   }
 
@@ -195,10 +201,25 @@ final class SyncController extends Notifier<SyncState> {
     return message;
   }
 
+  /// §11.6.4. Whether this device serves LAN sync rather than initiating it.
+  ///
+  /// The desktop registers no LAN transport (§11.6.4), so a pass with LAN on
+  /// and the folder off has nothing to send — which is correct, and which
+  /// [_describe] must not report as sync being switched off while the section
+  /// above it says the server is listening.
+  Future<bool> _lanServes() async =>
+      !ref.read(isLanClientProvider) &&
+      (await ref.read(settingsRepositoryProvider).read()).syncLanEnabled;
+
   /// §11.6.5 step 8. One line describing a pass, for the Settings status row.
-  static String _describe(SyncOutcome outcome) {
+  static String _describe(SyncOutcome outcome, {required bool lanServes}) {
     if (outcome.transports.isEmpty) {
-      return 'Sync is switched off.';
+      // §11.6.4: "only the phone can initiate". On the PC that is the design,
+      // not a misconfiguration, so it reads as an explanation rather than a
+      // complaint.
+      return lanServes
+          ? 'Your phone starts LAN syncs. There is nothing to send from here.'
+          : 'Sync is switched off.';
     }
     final List<String> failures = <String>[
       for (final TransportOutcome t in outcome.transports)

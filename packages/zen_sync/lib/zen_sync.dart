@@ -23,12 +23,28 @@
 /// * **Nothing aborts a pass.** A failing transport, an unwritable backup and
 ///   an unrecordable `lastSyncAt` are each caught, recorded and logged
 ///   (§11.6.5, NFR-1).
+/// * **The LAN endpoints are hostile input** (§11.6.4). `/hello`, `/pair` and
+///   `/sync` accept bytes from anyone on the Wi-Fi: bodies are capped before
+///   they are buffered, the pairing code is compared in constant time, every
+///   peer-supplied string is validated before it is stored or shown, and the
+///   `/sync` payload is §11.6.1's document, so the codec's all-or-nothing
+///   parsing guards the merge without this layer knowing the format.
+/// * **Only the phone registers a LAN transport** (§11.6.4). The desktop runs
+///   `LanSyncServer` and hands inbound snapshots to the *same* entry point
+///   `"Import snapshot…"` uses, rather than re-implementing the merge.
 /// * **Platform differences live in `SnapshotDirectory`.** Windows gets an
 ///   atomic rename; Android SAF cannot, and does delete-then-rename instead —
 ///   §11.6.3 states both and explains what the difference costs.
 library;
 
 export 'src/backup/backup_store.dart';
+export 'src/lan/lan_client.dart';
+export 'src/lan/lan_crypto.dart';
+export 'src/lan/lan_peer_input.dart';
+export 'src/lan/lan_protocol.dart';
+export 'src/lan/lan_server.dart';
+export 'src/lan/lan_transport.dart';
+export 'src/lan/peer_discovery.dart';
 export 'src/orchestrator.dart';
 export 'src/snapshot/snapshot_codec.dart';
 export 'src/snapshot/snapshot_envelope.dart';

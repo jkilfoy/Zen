@@ -37,7 +37,16 @@ abstract interface class SyncTransport {
   /// the ordinary first-run state and not a failure. Throwing is permitted and
   /// is handled by §11.6.5 step 3: the transport contributes nothing and is
   /// recorded as a per-transport status, and **the pass continues**.
-  Future<List<SnapshotEnvelope>> fetchPeerSnapshots();
+  ///
+  /// [local] is this replica's snapshot as step 2 captured it. "A pull-only
+  /// transport ignores it; the LAN transport must send it to receive the peer's
+  /// in one round trip (§11.6.4). Passing it in rather than letting a transport
+  /// build its own keeps a single capture per pass — two captures would let an
+  /// edit between them make the two ends merge different inputs."
+  ///
+  /// `FileSnapshotTransport` is the pull-only case and ignores it; nothing in a
+  /// directory needs to be told what this device holds.
+  Future<List<SnapshotEnvelope>> fetchPeerSnapshots(SnapshotEnvelope local);
 
   /// §11.6.2, §11.6.5 step 7. Makes [envelope] visible to peers.
   ///

@@ -116,19 +116,139 @@ void main() {
       expect(find.text('Restore from backup…'), findsOneWidget);
     });
 
-    testWidgets('the LAN toggle is present and disabled until M7', (
+    testWidgets('the LAN toggle writes syncLanEnabled', (
       WidgetTester tester,
     ) async {
-      // The same reasoning as D-M4-9: an absent control reads as a feature that
-      // was forgotten rather than one that is coming.
       final ZenHarness harness = ZenHarness();
       await openSync(tester, harness);
 
-      final SwitchListTile lan = tester.widget<SwitchListTile>(
+      await tester.tap(
         find.widgetWithText(SwitchListTile, 'Sync over the local network'),
       );
-      expect(lan.value, isFalse);
-      expect(lan.onChanged, isNull);
+      await tester.pumpAndSettle();
+
+      expect((await harness.settings.read()).syncLanEnabled, isTrue);
+    });
+
+    testWidgets('the desktop offers "Pair a device" once LAN is on', (
+      WidgetTester tester,
+    ) async {
+      // §11.6.4: "on **Windows**, `syncLanEnabled` starts `LanSyncServer` and
+      // registers **no** transport."
+      final ZenHarness harness = ZenHarness();
+      await harness.settings.write(Settings(syncLanEnabled: true));
+      await openSync(tester, harness);
+
+      expect(find.text('Pair a device'), findsOneWidget);
+      expect(find.text('Pair with a PC'), findsNothing);
+      expect(
+        find.text('No devices paired yet. Pair one to sync over Wi-Fi.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the phone offers "Pair with a PC" and §11.6.4 copy', (
+      WidgetTester tester,
+    ) async {
+      final ZenHarness harness = ZenHarness(isLanClient: true);
+      await harness.settings.write(
+        Settings(
+          syncLanEnabled: true,
+          syncLanPeers: <LanPeer>[
+            const LanPeer(
+              replicaId: 'replica-desktop',
+              deviceName: 'Jordan PC',
+              host: '192.168.1.20',
+              port: 51789,
+              psk: 'a2V5',
+            ),
+          ],
+        ),
+      );
+      await openSync(tester, harness);
+
+      expect(find.text('Pair with a PC'), findsOneWidget);
+      expect(find.text('Pair a device'), findsNothing);
+      // "Document this in the UI ('Open Zen on your PC to sync')."
+      expect(find.text('Open Zen on your PC to sync.'), findsOneWidget);
+      // §11.8's paired-device list, with its address and its unpair action.
+      expect(find.text('Jordan PC'), findsOneWidget);
+      expect(find.text('192.168.1.20:51789'), findsOneWidget);
+      expect(find.text('Unpair'), findsOneWidget);
+    });
+
+    testWidgets('a desktop peer record shows no address, because it has none', (
+      WidgetTester tester,
+    ) async {
+      // §11.6.4 step 4: "`host` and `port` are the client's fields only."
+      // Printing ":0" for the desktop's own records would be a bug that reads
+      // as a formatting slip.
+      final ZenHarness harness = ZenHarness();
+      await harness.settings.write(
+        Settings(
+          syncLanEnabled: true,
+          syncLanPeers: <LanPeer>[
+            const LanPeer(
+              replicaId: 'replica-phone',
+              deviceName: 'Pixel',
+              host: '',
+              port: 0,
+              psk: 'a2V5',
+            ),
+          ],
+        ),
+      );
+      await openSync(tester, harness);
+
+      // Asserted on the row itself rather than on the screen: "02:00" is the
+      // End-of-Day time further up the same Settings screen.
+      final ListTile row = tester.widget<ListTile>(
+        find.widgetWithText(ListTile, 'Pixel'),
+      );
+      expect(row.subtitle, isNull);
+    });
+
+    testWidgets('unpairing asks first, and says it is one-sided', (
+      WidgetTester tester,
+    ) async {
+      final ZenHarness harness = ZenHarness(isLanClient: true);
+      await harness.settings.write(
+        Settings(
+          syncLanEnabled: true,
+          syncLanPeers: <LanPeer>[
+            const LanPeer(
+              replicaId: 'replica-desktop',
+              deviceName: 'Jordan PC',
+              host: '192.168.1.20',
+              port: 51789,
+              psk: 'a2V5',
+            ),
+          ],
+        ),
+      );
+      await openSync(tester, harness);
+
+      await tester.tap(find.text('Unpair'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Unpair it on Jordan PC as well'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Unpair'));
+      await tester.pumpAndSettle();
+
+      expect((await harness.settings.read()).syncLanPeers, isEmpty);
+    });
+
+    testWidgets('with LAN off, no pairing controls are shown', (
+      WidgetTester tester,
+    ) async {
+      final ZenHarness harness = ZenHarness();
+      await openSync(tester, harness);
+
+      expect(find.text('Pair a device'), findsNothing);
+      expect(find.text('Pair with a PC'), findsNothing);
     });
 
     testWidgets('the folder toggle waits for a folder to be chosen', (
@@ -615,6 +735,31 @@ void main() {
       expect(
         harness.container.read(syncControllerProvider).message,
         'Sync is switched off.',
+      );
+      expect(namesIn(harness.syncFolder), isEmpty);
+    });
+
+    testWidgets('on the PC, a LAN-only pass explains itself instead', (
+      WidgetTester tester,
+    ) async {
+      // §11.6.4: the desktop registers no transport, so a pass with LAN on and
+      // the folder off has nothing to send — which is the design, not a
+      // misconfiguration. Reporting it as "Sync is switched off." would
+      // contradict the line directly above it in the section, which says the
+      // server is listening.
+      //
+      // Driven through the controller rather than the widgets, like every other
+      // test in this group: rendering the section subscribes `LanController` to
+      // a Drift stream, and under the fake clock a `pumpAndSettle` after a
+      // real-async pass never settles (D-M6-15, and the header above).
+      final ZenHarness harness = ZenHarness();
+      await harness.settings.write(Settings(syncLanEnabled: true));
+
+      await tester.runAsync(controllerOf(harness).syncNow);
+
+      expect(
+        harness.container.read(syncControllerProvider).message,
+        'Your phone starts LAN syncs. There is nothing to send from here.',
       );
       expect(namesIn(harness.syncFolder), isEmpty);
     });

@@ -172,7 +172,7 @@ void main() {
         await transportFor('replica-a').publish(envelope('replica-a'));
 
         final List<SnapshotEnvelope> peers = await transportFor('replica-a')
-            .fetchPeerSnapshots();
+            .fetchPeerSnapshots(envelope('replica-a'));
 
         expect(peers.map((SnapshotEnvelope e) => e.replicaId), <String>[
           'replica-b',
@@ -187,7 +187,7 @@ void main() {
           .writeAsStringSync(body);
 
       final List<SnapshotEnvelope> peers = await transportFor('replica-a')
-          .fetchPeerSnapshots();
+          .fetchPeerSnapshots(envelope('replica-a'));
 
       expect(peers.single.replicaId, 'replica-b');
     });
@@ -199,7 +199,11 @@ void main() {
         File('${folder.path}/zen-snapshot-replica-b.json')
             .writeAsStringSync(body);
 
-        expect(await transportFor('replica-a').fetchPeerSnapshots(), isEmpty);
+        expect(
+          await transportFor('replica-a')
+              .fetchPeerSnapshots(envelope('replica-a')),
+          isEmpty,
+        );
       },
     );
 
@@ -211,7 +215,7 @@ void main() {
             .writeAsStringSync('{ nope');
 
         final List<SnapshotEnvelope> peers = await transportFor('replica-a')
-            .fetchPeerSnapshots();
+            .fetchPeerSnapshots(envelope('replica-a'));
 
         expect(peers.map((SnapshotEnvelope e) => e.replicaId), <String>[
           'replica-b',
@@ -229,7 +233,11 @@ void main() {
               .replaceFirst('"formatVersion": 1', '"formatVersion": 2'),
         );
 
-        expect(await transportFor('replica-a').fetchPeerSnapshots(), isEmpty);
+        expect(
+          await transportFor('replica-a')
+              .fetchPeerSnapshots(envelope('replica-a')),
+          isEmpty,
+        );
         expect(warnings.single, contains('newer version of Zen'));
       },
     );
@@ -241,13 +249,21 @@ void main() {
         File('${folder.path}/zen-snapshot-replica-b.json.bak')
             .writeAsStringSync('x');
 
-        expect(await transportFor('replica-a').fetchPeerSnapshots(), isEmpty);
+        expect(
+          await transportFor('replica-a')
+              .fetchPeerSnapshots(envelope('replica-a')),
+          isEmpty,
+        );
         expect(warnings, isEmpty);
       },
     );
 
     test('an empty folder is not a failure', () async {
-      expect(await transportFor('replica-a').fetchPeerSnapshots(), isEmpty);
+      expect(
+        await transportFor('replica-a')
+            .fetchPeerSnapshots(envelope('replica-a')),
+        isEmpty,
+      );
       expect(warnings, isEmpty);
     });
   });
@@ -259,7 +275,11 @@ void main() {
       File('${folder.path}/zen-tmp-replica-b-0190f3a1.json')
           .writeAsStringSync('half a file');
 
-      expect(await transportFor('replica-a').fetchPeerSnapshots(), isEmpty);
+      expect(
+        await transportFor('replica-a')
+            .fetchPeerSnapshots(envelope('replica-a')),
+        isEmpty,
+      );
       expect(warnings, isEmpty);
     });
 

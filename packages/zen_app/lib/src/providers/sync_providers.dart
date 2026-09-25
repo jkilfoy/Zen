@@ -14,6 +14,7 @@ import 'package:zen_data/zen_data.dart';
 import 'package:zen_domain/zen_domain.dart';
 import 'package:zen_sync/zen_sync.dart';
 
+import '../sync/nsd_peer_discovery.dart';
 import '../sync/saf_snapshot_directory.dart';
 import '../sync/snapshot_file_exchange.dart';
 import '../sync/sync_folder_picker.dart';
@@ -91,31 +92,68 @@ SnapshotDirectory _snapshotDirectory(String location) => Platform.isAndroid
     ? SafSnapshotDirectory(location)
     : IoSnapshotDirectory(location);
 
+/// §11.6.4. Whether this build is the client half of the LAN exchange.
+///
+/// "The **Windows app is the server**; the **Android app is the client**." One
+/// provider rather than a `Platform.isAndroid` in each screen, so §11.6.4's
+/// asymmetry is stated once and so a widget test can render either half.
+final Provider<bool> isLanClientProvider = Provider<bool>(
+  (Ref ref) => Platform.isAndroid,
+);
+
+/// §11.6.4. mDNS, on the platform that has it.
+///
+/// A provider so the transport takes a port rather than a plugin, and so a
+/// widget test gets `NoPeerDiscovery` without a platform channel.
+final Provider<PeerDiscovery> peerDiscoveryProvider = Provider<PeerDiscovery>(
+  (Ref ref) =>
+      Platform.isAndroid ? const NsdPeerDiscovery() : const NoPeerDiscovery(),
+);
+
+/// §11.6.4. The phone's LAN transport, or `null` on the platform that serves.
+///
+/// "**Only the phone registers a transport.** … on **Windows**,
+/// `syncLanEnabled` starts `LanSyncServer` and registers **no** transport …
+/// on **Android**, it registers the transport and starts no server." A desktop
+/// entry would report "published" for a write that never happened.
+final Provider<LanSyncTransport?> lanSyncTransportProvider =
+    Provider<LanSyncTransport?>((Ref ref) {
+      if (!Platform.isAndroid) {
+        return null;
+      }
+      final LanSyncTransport transport = LanSyncTransport(
+        settings: ref.watch(settingsRepositoryProvider),
+        clock: ref.watch(clockProvider),
+        discovery: ref.watch(peerDiscoveryProvider),
+        log: ref.watch(syncLoggerProvider),
+      );
+      return transport;
+    });
+
 /// §11.6.5 step 3. The transports that are switched on right now.
 ///
 /// §11.8's `syncFolderEnabled` and `syncLanEnabled` decide this, read fresh on
 /// every pass so that turning a transport off takes effect at once (SET-2).
-/// `syncLanEnabled` builds nothing yet: `LanSyncTransport` is M7, and the
-/// orchestrator is already n-ary and multi-transport, so M7 adds an
-/// implementation to this list and nothing else (§11.6.5).
+/// This is the whole of what M7 added to the orchestration: one more entry in
+/// one list, because §11.6.5 is already n-ary and multi-transport.
 final Provider<EnabledTransports> enabledTransportsProvider =
     Provider<EnabledTransports>((Ref ref) {
       final SettingsRepository settings = ref.watch(settingsRepositoryProvider);
       final ReplicaRepository replicas = ref.watch(replicaRepositoryProvider);
       final SyncLogger log = ref.watch(syncLoggerProvider);
+      final LanSyncTransport? lan = ref.watch(lanSyncTransportProvider);
 
       return () async {
         final Settings current = await settings.read();
         final String location = current.syncFolderLocation ?? '';
-        if (!current.syncFolderEnabled || location.isEmpty) {
-          return const <SyncTransport>[];
-        }
         return <SyncTransport>[
-          FileSnapshotTransport(
-            directory: _snapshotDirectory(location),
-            replicaId: await replicas.replicaId(),
-            log: log,
-          ),
+          if (current.syncFolderEnabled && location.isNotEmpty)
+            FileSnapshotTransport(
+              directory: _snapshotDirectory(location),
+              replicaId: await replicas.replicaId(),
+              log: log,
+            ),
+          if (current.syncLanEnabled && lan != null) lan,
         ];
       };
     });
@@ -144,3 +182,59 @@ final Provider<SyncOrchestrator> syncOrchestratorProvider =
         log: ref.watch(syncLoggerProvider),
       ),
     );
+
+/// §11.6.4. The desktop's LAN server, or `null` on the platform that dials.
+///
+/// A `Provider` rather than anything rebuilt per use: the listener, the pairing
+/// window and the derived-key cache all live on the instance, and a second
+/// server would bind a second socket.
+///
+/// **It does not merge.** `inboundMerge` hands the peer's envelope to
+/// `syncWith` — "the same entry point `"Import snapshot…"` uses" — so the
+/// single-flight lock, the pre-merge backup, `replaceAll`, the `merged` events
+/// and `lastSyncAt` are §11.6.5's, once, rather than a second copy here.
+final Provider<LanSyncServer?> lanSyncServerProvider = Provider<LanSyncServer?>(
+  (Ref ref) {
+    if (Platform.isAndroid) {
+      return null;
+    }
+    final ReplicaRepository replicas = ref.watch(replicaRepositoryProvider);
+    final Clock clock = ref.watch(clockProvider);
+    final String appVersion = ref.watch(appVersionProvider);
+
+    final LanSyncServer server = LanSyncServer(
+      replicas: replicas,
+      settings: ref.watch(settingsRepositoryProvider),
+      snapshotSource: () async => SnapshotEnvelope(
+        replicaId: await replicas.replicaId(),
+        deviceName: await replicas.deviceName(),
+        generatedAt: clock.nowUtc(),
+        appVersion: appVersion,
+        snapshot: ReplicaSnapshot(
+          replicaId: await replicas.replicaId(),
+          ideas: await ref.read(ideaRepositoryProvider).watchAll().first,
+          tasks: await ref.read(taskRepositoryProvider).watchAll().first,
+          tombstones: await ref.read(tombstoneStoreProvider).all(),
+        ),
+      ),
+      inboundMerge: (SnapshotEnvelope peer) =>
+          ref.read(syncOrchestratorProvider).syncWith(<SnapshotEnvelope>[peer]),
+      clock: clock,
+      appVersion: appVersion,
+      log: ref.watch(syncLoggerProvider),
+    );
+    ref.onDispose(server.stop);
+    return server;
+  },
+);
+
+/// §11.6.4. The desktop's mDNS registration, or `null` on the phone.
+final Provider<NsdServiceRegistration?> lanRegistrationProvider =
+    Provider<NsdServiceRegistration?>((Ref ref) {
+      if (Platform.isAndroid) {
+        return null;
+      }
+      final NsdServiceRegistration registration = NsdServiceRegistration();
+      ref.onDispose(registration.unregister);
+      return registration;
+    });

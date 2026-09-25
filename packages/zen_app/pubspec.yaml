@@ -22,9 +22,20 @@ dependencies:
   flutter_timezone: ^5.1.0
   go_router: ^18.0.1
   intl: ^0.20.3
+  # §11.2, §11.6.4. QR scanning on the phone's pairing screen. Android, iOS,
+  # macOS and web only — there is no Windows implementation, which is why the
+  # scan screen is reached on Android alone and the desktop types nothing.
+  mobile_scanner: ^7.4.2
+  # §11.2, §11.6.4. mDNS: the desktop registers `_zen-sync._tcp`, the phone
+  # browses. `nsd` is the one §11.2 requires because it does **both**, and its
+  # federated implementations include Windows as well as Android.
+  nsd: ^5.0.1
   package_info_plus: ^10.2.1
   path: ^1.9.1
   path_provider: ^2.1.6
+  # §11.2, §11.6.4. The desktop pairing screen's QR code. Pure Dart rendering,
+  # so it works on both platforms.
+  qr_flutter: ^4.1.0
   # §11.6.3, §11.7. Android scoped storage. `saf_util` picks the tree and does
   # the directory operations; it deliberately excludes read and write, which is
   # why `saf_stream` is here too — §11.2 anticipated the pair.

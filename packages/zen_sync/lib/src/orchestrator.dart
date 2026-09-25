@@ -152,13 +152,26 @@ final class SyncOrchestrator {
     final String deviceName = await _replicas.deviceName();
 
     // Step 2. The local snapshot, as this device stands before any merge.
+    //
+    // Captured **once** and handed to step 3, because §11.6.2's
+    // `fetchPeerSnapshots` now takes it: the LAN transport has to send this
+    // device's snapshot in order to receive the peer's in one round trip, and
+    // letting it capture its own would give the two ends different inputs
+    // whenever the user edited something in between.
     final ReplicaSnapshot local = await _localSnapshot(replicaId);
+    final SnapshotEnvelope localEnvelope = SnapshotEnvelope(
+      replicaId: replicaId,
+      deviceName: deviceName,
+      generatedAt: _clock.nowUtc(),
+      appVersion: _appVersion,
+      snapshot: local,
+    );
     final List<SyncTransport> transports = await _enabledTransports();
 
     // Step 3.
     final PeerCollection collected = await collectPeers(
       transports: transports,
-      replicaId: replicaId,
+      local: localEnvelope,
       extraPeers: extraPeers,
       log: _log,
     );

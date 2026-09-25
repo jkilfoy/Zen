@@ -217,6 +217,95 @@ to know the recovery path works before you need it.
 | S-23 | Tap `Restore from backup…` and pick one | It reports how much it restored and tells you to close and reopen Zen. | The message. |
 | S-24 | Close Zen and reopen it | The app starts normally with the restored data. The corrupted file is still on disk under its `…unreadable-<timestamp>` name. | Whether both are true. |
 
+## M7 — LAN sync (needs both devices, on one Wi-Fi network)
+
+§11.13.1 puts four things in the hardware column for M7 and they are the whole
+reason this section exists: **mDNS discovery across two hosts, Windows Firewall
+prompts, Wi-Fi drop-outs, and real QR scanning.** None of them can be reached
+from a loopback server, and all four have failed for other people's apps in
+ways that only appear on a real network.
+
+Everything else in M7 is proved headlessly: 166 tests in `zen_sync`, of which
+77 are M7's, run against a real `shelf` listener on `127.0.0.1` with a real HTTP
+client. The endpoints, the body caps, the status codes, the key derivation, the
+per-pairing keys, the trial decryption, the freshness check and the full
+one-round-trip merge exchange are all exercised there.
+
+**Two things below are security checks, not feature checks** — L-12 and L-13.
+They are the only steps that confirm the defences §11.6.4 added after the
+pre-implementation review, and a "works fine" on the rest does not cover them.
+
+### M7 — before you build
+
+```bash
+# From an ELEVATED terminal on Windows (D-M4-16), at the repository root:
+cd packages\zen_app
+flutter build windows --release
+flutter build apk --debug
+```
+
+Three new native plugins register on Windows (`nsd_windows`) and on Android
+(`nsd_android`, `mobile_scanner`). **If the Windows build fails, report the
+error before going further** — M6's Windows build was never verified either, so
+this is the first time these plugins are compiled at all.
+
+Put both devices on the **same Wi-Fi network**, and make sure the PC is not on a
+"Public" network profile if you can avoid it.
+
+### M7 — Windows: the server side
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| L-1 | Settings ▸ Sync ▸ turn on **"Sync over the local network"** | The subtitle becomes `Listening on port 51789. Keep Zen open on this PC.` | The exact subtitle. If it names a port conflict or an error instead, report it verbatim. |
+| L-2 | The **Windows Firewall prompt** | A prompt appears the first time Zen listens, asking about private/public networks. | Whether it appeared, and what you allowed. **If you dismissed or denied it, say so** — that alone will make every step below fail, and it is the single most likely cause of "the phone cannot see the PC". |
+| L-3 | Click **"Pair a device"** | A QR code, plus `Address` and `Code` in large text. The code is six digits and may start with a zero. | The address shown, and whether it matches what `ipconfig` reports for your Wi-Fi adapter. A PC with both Ethernet and Wi-Fi may show the wrong one — that is D-M7-11's known guess, and the manual path is the remedy. |
+| L-4 | Leave the pairing screen and come back | A **different** code each time. | Whether the code changed. |
+
+### M7 — Android: pairing
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| L-5 | Settings ▸ Sync ▸ turn on **"Sync over the local network"** | Subtitle reads `Pair with your PC to start.` and a **"Pair with a PC"** button appears. | Whether the button says "Pair with a PC" and *not* "Pair a device" — that would mean §11.6.4's role split is inverted. |
+| L-6 | Tap **"Pair with a PC"** | Android asks for camera permission the first time; the scanner opens below the instructions, with the typed fields under it. | Whether the permission prompt appeared, and whether the camera preview actually renders. |
+| L-7 | **Scan the QR on the PC** | A dialog: the PC's `address:port` in large text, `It calls itself "<your PC name>"`, and a warning about sending your data there. | The device name shown. It must be your PC's name, read from `/hello` and not from the QR. |
+| L-8 | Confirm **Pair** | The screen closes. The PC's name appears in the phone's paired list with its address. On the PC, the phone appears in *its* list — **with no address under it**, which is correct (§11.6.4 step 4). | Both lists. A `:0` under the phone's name on the PC would be a bug. |
+| L-9 | **Sync now** on the phone | Ideas and tasks from the PC appear on the phone, and the phone's appear on the PC **without pressing anything on the PC**. | Whether both directions worked from the one tap. |
+
+### M7 — the manual path, with mDNS out of the picture
+
+§11.6.4 makes this mandatory, not a fallback: *"mDNS is unreliable on some
+networks, so a manual host:port entry is mandatory, not optional."*
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| L-10 | Unpair on both devices. On the phone, open "Pair with a PC" and **type** the address, port and code instead of scanning | Same confirmation dialog, same result. | Whether typing worked. This is the path that must survive a network with no multicast. |
+| L-11 | Move the PC to a different address if you can (rejoin the Wi-Fi, or switch Ethernet↔Wi-Fi), then **Sync now** on the phone | The phone finds the PC again via mDNS without re-pairing, and the remembered address updates. **If it does not, that is expected on many networks** — report it rather than treating it as a failure. | Whether mDNS found it. This is the one step where a negative result is genuinely informative: it tells us whether `nsd` registration works on Windows at all, which nothing has ever run. |
+
+### M7 — the two security checks
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| L-12 | On the PC, open "Pair a device". On the phone, type the address and port but a **wrong six-digit code**, five times | Each attempt says `That code is not right.` The sixth says the window is closed and to open a new one — **and the correct code stops working too**. | Whether the fifth failure really closed the window. This is the brute-force bound: five tries against a million. |
+| L-13 | Pair normally. Then on the PC, **Unpair** the phone. On the phone, press **Sync now** | The phone reports that the PC is no longer paired and asks you to pair again. It must **not** silently succeed. | The exact message. A success here would mean a revoked device can still sync. |
+
+### M7 — the failure modes that only hardware shows
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| L-14 | With the phone paired, **close Zen on the PC** and press "Sync now" on the phone | `Open Zen on your PC to sync.` — promptly, not after a long wait. | How long it took. It should be seconds; §11.6.4 allows 3 s to connect. |
+| L-15 | Start a sync on the phone and immediately **turn the PC's Wi-Fi off**, or sleep the PC | Within about 30 seconds the phone reports that the PC did not answer in time. The app stays usable throughout, and a later "Sync now" works once the PC is back. | Whether the spinner ever stopped. **A spinner that never stops is the bug this step exists to find** — it would mean every later sync trigger is dead too (NFR-1). |
+| L-16 | Set the phone's clock **10 minutes** ahead (turn off automatic time), then "Sync now" | `These devices' clocks are more than 5 minutes apart. Check the date and time on both.` | Whether that exact sentence appeared. Anything vaguer makes a permanently broken sync unexplainable. Set the clock back afterwards. |
+| L-17 | With **both** the shared folder and LAN switched on, "Sync now" on the phone | One pass. Both transports report, neither breaks the other, and the data converges. | Whether the status line mentioned any failure. |
+| L-18 | Capture an idea on the phone **while a sync is running** | Capture is never blocked (NFR-1). | Whether anything froze. |
+
+### M7 — Android backup (one check, once)
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| L-19 | `adb shell bmgr backupnow com.example.zen` (use your real application id) | The backup is refused or skipped, because §11.9 now sets `android:allowBackup="false"`. | The output. This is what keeps your ideas, tasks and pairing keys off Google Drive (D-M7-2). If it *does* back up, the manifest change did not take effect. |
+
+---
+
 ## Both — the time zone (EOD-5)
 
 | # | Step | Expected | Report |
@@ -228,8 +317,8 @@ to know the recovery path works before you need it.
 
 ## Not in scope here
 
-- **M7's LAN end-to-end** has its own §11.13.1 entry and is not built yet. The
-  `"Sync over the local network"` toggle is deliberately present and disabled.
+- **M8 — packaging.** The Inno Setup installer, the signed APK and the tagged
+  release workflow are a separate milestone and nothing here covers them.
 - **Goldens** run on Windows only (D-M4-8). On the Linux CI runner they are
   skipped, which is expected.
 - **`ci.yaml` has still never run**, because the repository has no remote. That

@@ -45,16 +45,22 @@ final class PeerCollection {
 
 /// §11.6.5 step 3. Fetches from every enabled, reachable transport.
 ///
+/// [local] is step 2's capture, passed on to each transport: a pull-only
+/// transport ignores it, and the LAN transport must send it to receive the
+/// peer's (§11.6.2, §11.6.4). Its `replicaId` is also what a transport's own
+/// snapshot is filtered against below.
+///
 /// [extraPeers] are treated as peers alongside whatever the transports return,
 /// which is how `"Import snapshot…"` joins the ordinary pass (§11.8). They are
-/// deliberately **not** filtered by [replicaId]: a snapshot this device exported
-/// earlier is a legitimate thing to import (D-M6-9).
+/// deliberately **not** filtered by that `replicaId`: a snapshot this device
+/// exported earlier is a legitimate thing to import (D-M6-9).
 Future<PeerCollection> collectPeers({
   required List<SyncTransport> transports,
-  required String replicaId,
+  required SnapshotEnvelope local,
   required List<SnapshotEnvelope> extraPeers,
   required SyncLogger log,
 }) async {
+  final String replicaId = local.replicaId;
   final Map<String, TransportFetch> fetches = <String, TransportFetch>{};
   final List<SnapshotEnvelope> all = <SnapshotEnvelope>[...extraPeers];
 
@@ -80,7 +86,9 @@ Future<PeerCollection> collectPeers({
       continue;
     }
     try {
-      final List<SnapshotEnvelope> peers = await transport.fetchPeerSnapshots();
+      final List<SnapshotEnvelope> peers = await transport.fetchPeerSnapshots(
+        local,
+      );
       // A transport that hands back our own snapshot would put this device in
       // its own merge report as a peer. Harmless to merge — the merge is
       // idempotent — but misleading, and cheap to exclude here so that no

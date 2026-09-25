@@ -157,5 +157,5 @@ still waiting on real hardware (§11.13.1).
 | M4 — capture path | **done** — 87 widget tests green, and confirmed by hand on Windows and an Android emulator |
 | M5 — remaining screens | **done** — §5 fully implemented; goldens run on Windows only (D-M4-8) |
 | M6 — `zen_sync` core | **done** — S-1 to S-32 confirmed by hand on Windows and a real Android device, including the whole SAF path. Three defects found there and fixed (D-M6-20, D-M6-21) |
-| M7 — LAN transport | not started |
+| M7 — LAN transport | **code complete, awaiting hardware** — `LanSyncServer`, `LanSyncTransport`, pairing and crypto per §11.6.4, with 77 tests against a real loopback server; the suite is green at 942. **L-1 to L-19 in `MANUAL_VERIFICATION.md` need a phone and a PC on one Wi-Fi network and have not been run** (§11.13.1) |
 | M8 — packaging | not started |

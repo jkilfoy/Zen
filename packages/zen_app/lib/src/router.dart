@@ -7,6 +7,8 @@ import 'package:go_router/go_router.dart';
 import 'screens/archive_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/idea_form_screen.dart';
+import 'screens/pair_device_screen.dart';
+import 'screens/pair_scan_screen.dart';
 import 'screens/review_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
@@ -39,6 +41,12 @@ abstract final class Routes {
 
   /// `SCR-SETTINGS`.
   static const String settings = '/settings';
+
+  /// §11.6.4 step 1. The desktop's pairing screen.
+  static const String pairDevice = '/settings/pair';
+
+  /// §11.6.4 step 2. The phone's pairing screen.
+  static const String pairWithPc = '/settings/pair-with-pc';
 
   /// §5.3, Edit mode, for the Idea [id].
   static String editIdea(String id) => '/idea/$id';
@@ -153,6 +161,22 @@ GoRouter buildRouter() => GoRouter(
           path: 'settings',
           builder: (BuildContext context, GoRouterState state) =>
               const SettingsScreen(),
+          // §11.6.4's two pairing screens, nested under Settings for the same
+          // reason everything is nested under Home (B1): Back must return to
+          // the screen the user came from, and on Android the system Back must
+          // not fall through to the launcher (NAV-1).
+          routes: <RouteBase>[
+            GoRoute(
+              path: 'pair',
+              builder: (BuildContext context, GoRouterState state) =>
+                  const PairDeviceScreen(),
+            ),
+            GoRoute(
+              path: 'pair-with-pc',
+              builder: (BuildContext context, GoRouterState state) =>
+                  const PairScanScreen(),
+            ),
+          ],
         ),
       ],
     ),

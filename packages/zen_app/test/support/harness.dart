@@ -35,10 +35,16 @@ final class ZenHarness {
   /// test, not passed here: `initialSettingsProvider` is only what the first
   /// frame reads, and `settingsProvider`'s stream — the stored value — wins as
   /// soon as it emits.
+  ///
+  /// [isLanClient] picks which half of §11.6.4 the Settings section renders:
+  /// false is the desktop, which serves, and true is the phone, which dials.
+  /// Both halves are reachable from one host because the choice is a provider
+  /// rather than a `Platform.isAndroid` in the widget.
   factory ZenHarness({
     DateTime? now,
     FakeSyncFolderPicker? folderPicker,
     FakeSnapshotFileExchange? fileExchange,
+    bool isLanClient = false,
   }) {
     final AppDatabase db = AppDatabase(NativeDatabase.memory());
     addTearDown(db.close);
@@ -66,6 +72,15 @@ final class ZenHarness {
         syncFolderPickerProvider.overrideWithValue(picker),
         snapshotFileExchangeProvider.overrideWithValue(exchange),
         databaseProvider.overrideWithValue(db),
+        // §11.6.4. Which half of the LAN exchange this build is.
+        isLanClientProvider.overrideWithValue(isLanClient),
+        // §11.6.4. **No socket is bound by a widget test.** The server is
+        // covered in `zen_sync` against a real loopback listener, where the
+        // protocol can be exercised properly; here it would only bind a real
+        // port on the machine running the suite, and two tests at once would
+        // collide on it. These tests are about the section's wiring.
+        lanSyncServerProvider.overrideWithValue(null),
+        lanRegistrationProvider.overrideWithValue(null),
         localZoneIdProvider.overrideWithValue(testZoneId),
         initialSettingsProvider.overrideWithValue(Settings()),
         deviceNameProvider.overrideWithValue('test-device'),

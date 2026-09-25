@@ -16,10 +16,20 @@ environment:
 
 dependencies:
   collection: ^1.19.0
+  # §11.6.4's AES-GCM-256 and HKDF-SHA256. Pure Dart — its own dependencies are
+  # collection, crypto, ffi, meta and typed_data, and it declares no Flutter
+  # binding — so `dart test` still runs this package headlessly.
+  cryptography: ^2.9.0
+  # §11.6.4's LAN client, on the phone.
+  http: ^1.6.0
   meta: ^1.16.0
   # Path joining for the backup directory and the IO snapshot directory. Pure
   # Dart string manipulation; the IO itself is dart:io's.
   path: ^1.9.1
+  # §11.2, §11.6.4. The desktop's LAN server. Pure Dart, and depended on
+  # unconditionally: the phone never serves, but one package builds for both.
+  shelf: ^1.4.2
+  shelf_router: ^1.1.4
   # Temp-file names in §11.6.3's write protocol. The same version zen_domain
   # already resolves for entity ids.
   uuid: ^4.6.0

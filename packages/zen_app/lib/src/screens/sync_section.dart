@@ -12,6 +12,7 @@ import 'package:zen_sync/zen_sync.dart';
 
 import '../providers/app_providers.dart';
 import '../providers/sync_actions.dart';
+import '../widgets/lan_sync_block.dart';
 import '../providers/sync_providers.dart';
 import '../widgets/confirmations.dart';
 
@@ -21,10 +22,10 @@ import '../widgets/confirmations.dart';
 /// §11.8 lists what it shows: "each transport's toggle and status, the folder
 /// picker, the pairing flow, the paired-device list with an unpair action,
 /// `"Sync now"`, the last sync time and result, `"Export snapshot…"`,
-/// `"Import snapshot…"`, and `"Restore from backup…"`." Everything but the
-/// pairing flow and the paired-device list is here; those two are
-/// `LanSyncTransport`'s (§11.6.4) and arrive with M7, shown disabled for the
-/// same reason D-M4-9 gave — an absent control reads as a forgotten feature.
+/// `"Import snapshot…"`, and `"Restore from backup…"`." The pairing flow and
+/// the paired-device list are `LanSyncBlock`'s, because §11.6.4's two roles
+/// make that part of the section read differently on each platform and this
+/// file is already near §11.11's four-hundred-line guide.
 class SyncSection extends ConsumerWidget {
   /// Builds the section.
   const SyncSection({super.key});
@@ -87,15 +88,8 @@ class SyncSection extends ConsumerWidget {
           ],
         ),
 
-        // §11.8, `syncLanEnabled`. M7.
-        const SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: Text('Sync over the local network'),
-          subtitle: Text('Pairing arrives in a later version.'),
-          value: false,
-          onChanged: null,
-        ),
+        // §11.8, `syncLanEnabled`, and §11.6.4's pairing flow.
+        const LanSyncBlock(),
 
         const Divider(),
 
