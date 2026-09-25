@@ -137,6 +137,9 @@ plausibly affect any of it.
 and a Galaxy S20 FE running Android 13. `MANUAL_VERIFICATION.md` section M8 is the
 record of what was checked, and the script to re-run for the next release.
 
+**[`release_process.md`](release_process.md) is the short version** — read that when you
+actually want to cut one. What follows is why it is shaped the way it is.
+
 §11.9. Both artifacts are built locally, from an **elevated** PowerShell:
 
 ```powershell
