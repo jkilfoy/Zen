@@ -1351,14 +1351,22 @@ Nothing in this table may be treated as complete until its column reads "Yes".
 
 ### Open verification items
 
-- **The Windows build of M6 is unverified.** `flutter build windows` needs an
-  elevated terminal or Developer Mode (D-M4-16), and the agent had neither, so it
-  stopped at "Building with plugins requires symlink support" before compiling
-  anything. One new native plugin is registered there, `file_selector_windows`,
-  which is flutter.dev's own; `jni` was already in the FFI list before M6 and is
-  not new. The Android build **was** checked: `flutter build apk --debug`
-  succeeded on 2026-09-24 against `minSdk` 26, so `saf_util`, `saf_stream` and
-  `file_selector_android` at least compile and resolve.
+- **The Windows build is confirmed working. This item is closed.** The owner has
+  built and installed on Windows from an elevated PowerShell repeatedly, most
+  recently on 2026-09-25, and it succeeds every time. `file_selector_windows`,
+  the one native plugin M6 added there, compiles and links.
+
+  The earlier entry recorded this as unverified because an *agent* could not run
+  it: `flutter build windows` needs an elevated terminal or Developer Mode for
+  symlink support (D-M4-16), and stops at "Building with plugins requires symlink
+  support" without one. That is a constraint on the agent's environment, not a
+  defect in the project, and it should not be re-investigated. A future session
+  that cannot build for Windows should say so and hand the build to the owner
+  rather than treating it as a problem to solve.
+
+  The Android build was checked on 2026-09-24: `flutter build apk --debug`
+  succeeded against `minSdk` 26, so `saf_util`, `saf_stream` and
+  `file_selector_android` compile and resolve.
 
 - **The Android SAF code was confirmed on a device on 2026-09-24**, through
   S-8 to S-15. The two failure modes flagged here before that — SAF mangling the
