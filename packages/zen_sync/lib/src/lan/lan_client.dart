@@ -105,6 +105,7 @@ final class LanClient {
       throw LanSyncFailure(
         'These copies of Zen speak different sync protocols '
         '(this one v$lanProtocolVersion, the PC v$version). Update both.',
+        kind: LanFailureKind.protocolMismatch,
       );
     }
     final Object? appVersion = body[LanFields.appVersion];
@@ -238,13 +239,23 @@ final class LanClient {
     } on TimeoutException {
       throw const LanSyncFailure(
         'The PC did not answer in time. It may have gone to sleep.',
+        kind: LanFailureKind.timedOut,
       );
     } on SocketException {
-      throw const LanSyncFailure(LanSyncFailure.desktopNotRunningMessage);
+      throw const LanSyncFailure(
+        LanSyncFailure.desktopNotRunningMessage,
+        kind: LanFailureKind.unreachable,
+      );
     } on http.ClientException {
-      throw const LanSyncFailure(LanSyncFailure.desktopNotRunningMessage);
+      throw const LanSyncFailure(
+        LanSyncFailure.desktopNotRunningMessage,
+        kind: LanFailureKind.unreachable,
+      );
     } on HandshakeException {
-      throw const LanSyncFailure('That does not look like a Zen PC.');
+      throw const LanSyncFailure(
+        'That does not look like a Zen PC.',
+        kind: LanFailureKind.unreachable,
+      );
     }
   }
 

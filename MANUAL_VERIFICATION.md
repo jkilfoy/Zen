@@ -235,6 +235,14 @@ one-round-trip merge exchange are all exercised there.
 They are the only steps that confirm the defences §11.6.4 added after the
 pre-implementation review, and a "works fine" on the rest does not cover them.
 
+> **First run, 2026-09-25: L-1 to L-6 passed; L-7 and L-10 failed.** The PC
+> advertised `172.26.240.1`, which is WSL2's host-only adapter and unroutable
+> from a phone, so every connection timed out after three seconds. Both the
+> scanned and the typed path failed for that one reason. Fixed in D-M7-15 and
+> D-M7-17; Windows Firewall was investigated and ruled out (D-M7-16). **Rerun
+> from L-3**, which now offers a choice of address, and note the two new steps
+> L-3a and L-10a.
+
 ### M7 — before you build
 
 ```bash
@@ -258,7 +266,8 @@ Put both devices on the **same Wi-Fi network**, and make sure the PC is not on a
 |---|---|---|---|
 | L-1 | Settings ▸ Sync ▸ turn on **"Sync over the local network"** | The subtitle becomes `Listening on port 51789. Keep Zen open on this PC.` | The exact subtitle. If it names a port conflict or an error instead, report it verbatim. |
 | L-2 | The **Windows Firewall prompt** | A prompt appears the first time Zen listens, asking about private/public networks. | Whether it appeared, and what you allowed. **If you dismissed or denied it, say so** — that alone will make every step below fail, and it is the single most likely cause of "the phone cannot see the PC". |
-| L-3 | Click **"Pair a device"** | A QR code, plus `Address` and `Code` in large text. The code is six digits and may start with a zero. | The address shown, and whether it matches what `ipconfig` reports for your Wi-Fi adapter. A PC with both Ethernet and Wi-Fi may show the wrong one — that is D-M7-11's known guess, and the manual path is the remedy. |
+| L-3 | Click **"Pair a device"** | A QR code, plus `Address` and `Code` in large text. The code is six digits and may start with a zero. If this PC has more than one address, chips below offer the others, each labelled with its adapter name. | The address shown by default, and whether it matches what `ipconfig` reports for your **Wi-Fi** adapter. This is the step that failed on 2026-09-25 — it offered WSL's `172.26.240.1` (D-M7-15). |
+| L-3a | If more than one chip is offered, tap another | The QR and the `Address` line both change. **The `Code` does not change.** | Whether the code stayed put. A changing code would invalidate anything already typed on the phone. |
 | L-4 | Leave the pairing screen and come back | A **different** code each time. | Whether the code changed. |
 
 ### M7 — Android: pairing
@@ -278,7 +287,8 @@ networks, so a manual host:port entry is mandatory, not optional."*
 
 | # | Step | Expected | Report |
 |---|---|---|---|
-| L-10 | Unpair on both devices. On the phone, open "Pair with a PC" and **type** the address, port and code instead of scanning | Same confirmation dialog, same result. | Whether typing worked. This is the path that must survive a network with no multicast. |
+| L-10 | Unpair on both devices. On the phone, open "Pair with a PC" and **type** the address, port and code instead of scanning | Same confirmation dialog, same result. | Whether typing worked. This is the path that must survive a network with no multicast, and it has **never yet been exercised** — both attempts on 2026-09-25 typed the wrong address because the PC was displaying it (D-M7-15). |
+| L-10a | Deliberately type an address nothing is listening on, e.g. `10.99.99.99` | After a few seconds: *"Could not reach 10.99.99.99:51789. Check that this address is the one your PC is showing, and that both devices are on the same Wi-Fi network."* | Whether the message names the address you typed. The old copy said "Open Zen on your PC to sync" for this, which sent you looking in the wrong place (D-M7-17). |
 | L-11 | Move the PC to a different address if you can (rejoin the Wi-Fi, or switch Ethernet↔Wi-Fi), then **Sync now** on the phone | The phone finds the PC again via mDNS without re-pairing, and the remembered address updates. **If it does not, that is expected on many networks** — report it rather than treating it as a failure. | Whether mDNS found it. This is the one step where a negative result is genuinely informative: it tells us whether `nsd` registration works on Windows at all, which nothing has ever run. |
 
 ### M7 — the two security checks

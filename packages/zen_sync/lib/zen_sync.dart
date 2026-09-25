@@ -38,6 +38,7 @@
 library;
 
 export 'src/backup/backup_store.dart';
+export 'src/lan/lan_address.dart';
 export 'src/lan/lan_client.dart';
 export 'src/lan/lan_crypto.dart';
 export 'src/lan/lan_peer_input.dart';

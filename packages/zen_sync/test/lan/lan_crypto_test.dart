@@ -396,6 +396,29 @@ void main() {
       expect(isValidPairingCode('000000'), isTrue);
     });
 
+    test('D-M7-15: switching host keeps the code and everything else', () {
+      // The desktop offers every address it might be reachable at. A new code
+      // on each switch would invalidate whatever the user has already typed
+      // into the phone — correcting a wrong address would break the pairing it
+      // was meant to fix.
+      final LanPairingInvitation moved = invitation.withHost('10.0.0.7');
+
+      expect(moved.host, '10.0.0.7');
+      expect(moved.code, invitation.code);
+      expect(moved.port, invitation.port);
+      expect(moved.replicaId, invitation.replicaId);
+      expect(moved.deviceName, invitation.deviceName);
+    });
+
+    test('D-M7-15: the moved invitation is a parseable payload', () {
+      final LanPairingInvitation? parsed = LanPairingInvitation.parse(
+        invitation.withHost('10.0.0.7').toPayload(),
+      );
+
+      expect(parsed?.host, '10.0.0.7');
+      expect(parsed?.code, '004321');
+    });
+
     test('an oversized payload is refused before it is parsed', () {
       expect(LanPairingInvitation.parse('zen-pair:v1?dn=${'a' * 600}'), isNull);
     });

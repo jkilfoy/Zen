@@ -60,9 +60,12 @@ class _PairDeviceScreenState extends ConsumerState<PairDeviceScreen> {
             child: switch (lan) {
               LanState(listening: false, error: final String? error) =>
                 _notListening(theme, error),
-              LanState(invitation: final LanPairingInvitation? invitation)
+              LanState(
+                invitation: final LanPairingInvitation? invitation,
+                addresses: final List<LanAddressCandidate> addresses,
+              )
                   when invitation != null =>
-                _invitation(theme, invitation),
+                _invitation(theme, invitation, addresses),
               _ => const Center(child: CircularProgressIndicator()),
             },
           ),
@@ -85,6 +88,7 @@ class _PairDeviceScreenState extends ConsumerState<PairDeviceScreen> {
   Widget _invitation(
     ThemeData theme,
     LanPairingInvitation invitation,
+    List<LanAddressCandidate> addresses,
   ) => Column(
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -118,12 +122,41 @@ class _PairDeviceScreenState extends ConsumerState<PairDeviceScreen> {
       _row(theme, 'Code', invitation.code),
       const SizedBox(height: 16),
       Text(
-        'The code works once, and for five minutes. If this PC has more than '
-        'one network address, the one above is a guess — try another from '
-        'your network settings if the phone cannot reach it.',
+        'The code works once, and for five minutes.',
         style: theme.textTheme.bodySmall,
         textAlign: TextAlign.center,
       ),
+      if (addresses.length > 1) ...<Widget>[
+        const SizedBox(height: 16),
+        Text(
+          'If the phone cannot reach that address, choose another:',
+          style: theme.textTheme.bodySmall,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        // §11.6.4, D-M7-15. This PC cannot tell which of its addresses the
+        // phone can route to — only the phone can — so every candidate is
+        // offered rather than guessed at silently. The interface name is shown
+        // because the address alone does not tell anyone which one is their
+        // Wi-Fi. Switching does not change the code.
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            for (final LanAddressCandidate candidate in addresses)
+              ChoiceChip(
+                selected: candidate.address == invitation.host,
+                onSelected: (bool _) => ref
+                    .read(lanControllerProvider.notifier)
+                    .selectAddress(candidate.address),
+                label: Text(
+                  '${candidate.address}  ·  ${candidate.interfaceName}',
+                ),
+              ),
+          ],
+        ),
+      ],
     ],
   );
 

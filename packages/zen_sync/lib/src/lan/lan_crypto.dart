@@ -214,6 +214,7 @@ final class LanMessage {
         'These copies of Zen speak different sync protocols '
         '(this one v$lanProtocolVersion, the other '
         '${parsed[LanFields.protocolVersion]}). Update both.',
+        kind: LanFailureKind.protocolMismatch,
       );
     }
 

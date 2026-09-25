@@ -122,6 +122,24 @@ final class LanPairingInvitation {
   /// The desktop's device name, shown in the confirmation.
   final String deviceName;
 
+  /// Returns a copy naming [host] instead, with everything else unchanged.
+  ///
+  /// §11.6.4, D-M7-15. The desktop offers every address it might be reachable
+  /// at and lets the user switch between them. **The code must survive the
+  /// switch**: a new one would invalidate whatever the user has already typed
+  /// into the phone, and would mean the act of correcting a wrong address
+  /// silently broke the pairing it was meant to fix.
+  ///
+  /// The same shape as `SnapshotEnvelope.withGeneratedAt`, and for the same
+  /// reason — one field replaced without restating the rest.
+  LanPairingInvitation withHost(String host) => LanPairingInvitation(
+    host: host,
+    port: port,
+    code: code,
+    replicaId: replicaId,
+    deviceName: deviceName,
+  );
+
   /// The payload the desktop renders as a QR code.
   String toPayload() => Uri(
     scheme: scheme,

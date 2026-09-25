@@ -22,6 +22,7 @@ final class LanState {
     this.error,
     this.invitation,
     this.codeExpiresAt,
+    this.addresses = const <LanAddressCandidate>[],
   });
 
   /// Desktop only: whether the server is up.
@@ -38,6 +39,14 @@ final class LanState {
 
   /// When that window closes.
   final DateTime? codeExpiresAt;
+
+  /// §11.6.4, D-M7-15. Every address this PC might be reachable at, best
+  /// first.
+  ///
+  /// Shown so the user can switch when the best guess is wrong. The PC cannot
+  /// know which of its addresses the phone can route to — only the phone can —
+  /// so the choice belongs to the person holding both devices.
+  final List<LanAddressCandidate> addresses;
 
   /// Whether a pairing window is open right now.
   bool get isPairing => invitation != null;
@@ -121,9 +130,9 @@ final class LanController extends Notifier<LanState> {
   ///
   /// The invitation carries the host the *phone* must dial, which this device
   /// cannot know for certain — a machine has several addresses and only the
-  /// phone's route decides which one works. The best local guess goes in the QR
-  /// and the address is also shown in text, which is what the manual entry path
-  /// is for.
+  /// phone's route decides which one works. So every candidate is ranked and
+  /// offered (D-M7-15), the best-ranked goes in the QR, and [selectAddress]
+  /// switches to another without disturbing the code.
   Future<LanPairingInvitation?> openPairingWindow() async {
     final LanSyncServer? server = ref.read(lanSyncServerProvider);
     if (server == null || !server.isRunning) {
@@ -131,8 +140,11 @@ final class LanController extends Notifier<LanState> {
     }
     final ReplicaRepository replicas = ref.read(replicaRepositoryProvider);
     final PairingWindow window = server.openPairingWindow();
+    final List<LanAddressCandidate> addresses = await localAddresses();
     final LanPairingInvitation invitation = LanPairingInvitation(
-      host: await localAddress() ?? '127.0.0.1',
+      // Falling back to loopback only when this PC has no reachable address at
+      // all, which is a machine with no network rather than a wrong guess.
+      host: addresses.isEmpty ? '127.0.0.1' : addresses.first.address,
       port: server.boundPort!,
       code: window.code,
       replicaId: await replicas.replicaId(),
@@ -144,6 +156,7 @@ final class LanController extends Notifier<LanState> {
       port: server.boundPort,
       invitation: invitation,
       codeExpiresAt: window.expiresAt,
+      addresses: addresses,
     );
 
     // The window closes itself in the model after five minutes; this only
@@ -151,6 +164,26 @@ final class LanController extends Notifier<LanState> {
     _windowTimer?.cancel();
     _windowTimer = Timer(LanPairing.window, closePairingWindow);
     return invitation;
+  }
+
+  /// §11.6.4, D-M7-15. Re-points the open invitation at [address].
+  ///
+  /// **The code does not change.** Switching address must not invalidate a code
+  /// the user has already started typing into the phone, so this rebuilds the
+  /// invitation around the same window rather than opening a new one.
+  void selectAddress(String address) {
+    final LanPairingInvitation? current = state.invitation;
+    if (current == null || current.host == address) {
+      return;
+    }
+    state = LanState(
+      listening: state.listening,
+      port: state.port,
+      error: state.error,
+      codeExpiresAt: state.codeExpiresAt,
+      addresses: state.addresses,
+      invitation: current.withHost(address),
+    );
   }
 
   /// Closes the pairing window.
@@ -161,6 +194,7 @@ final class LanController extends Notifier<LanState> {
       listening: state.listening,
       port: state.port,
       error: state.error,
+      addresses: state.addresses,
     );
   }
 
@@ -202,7 +236,7 @@ final class LanController extends Notifier<LanState> {
       );
       return null;
     } on LanSyncFailure catch (failure) {
-      return failure.message;
+      return _pairingMessage(failure, host, port);
     } finally {
       client.close();
     }
@@ -223,11 +257,36 @@ final class LanController extends Notifier<LanState> {
     try {
       return (hello: await client.hello(host, port), problem: null);
     } on LanSyncFailure catch (failure) {
-      return (hello: null, problem: failure.message);
+      return (hello: null, problem: _pairingMessage(failure, host, port));
     } finally {
       client.close();
     }
   }
+
+  /// §11.6.4, D-M7-17. Words a failure for someone who is *pairing*.
+  ///
+  /// `LanSyncFailure`'s own message is written for the sync status line, where
+  /// "Open Zen on your PC to sync." is the likeliest reason a connection goes
+  /// nowhere. While pairing it is the wrong guess: the user is standing in
+  /// front of the PC with Zen open on it, and the real causes are a wrong
+  /// address, a different Wi-Fi network, or a firewall. Naming the address
+  /// actually dialled is what turns "it does not work" into something checkable
+  /// against what the PC is displaying.
+  ///
+  /// Branches on [LanSyncFailure.kind] rather than on the message text, which
+  /// would break silently the first time the copy was reworded.
+  static String _pairingMessage(
+    LanSyncFailure failure,
+    String host,
+    int port,
+  ) => switch (failure.kind) {
+    LanFailureKind.unreachable || LanFailureKind.timedOut =>
+      'Could not reach $host:$port. Check that this address is the one '
+          'your PC is showing, and that both devices are on the same '
+          'Wi-Fi network.',
+    LanFailureKind.protocolMismatch ||
+    LanFailureKind.refused => failure.message,
+  };
 
   /// §11.8. Forgets a paired device.
   ///
@@ -247,27 +306,36 @@ final class LanController extends Notifier<LanState> {
     );
   }
 
-  /// This machine's LAN address, for the QR and the text the user reads out.
+  /// §11.6.4, D-M7-15. Every address this PC might be reachable at, best
+  /// first.
   ///
-  /// Loopback and link-local are skipped: neither is an address the phone can
-  /// reach. When there are several — a laptop on Wi-Fi and Ethernet at once —
-  /// the first is a guess, and the manual entry is the remedy.
-  static Future<String?> localAddress() async {
+  /// The enumeration is the untestable part and is all this method does; the
+  /// ranking is [rankLanAddresses] in `zen_sync`, where it is unit-tested.
+  ///
+  /// **Taking the first address the platform returned was the M7 defect.** On
+  /// a Windows machine with WSL installed, `NetworkInterface.list()` returns
+  /// `vEthernet (WSL)` before `Wi-Fi`, so the QR named a host-only virtual
+  /// address no phone can route to, and pairing failed at the connect timeout
+  /// on both the scanned and the typed path.
+  static Future<List<LanAddressCandidate>> localAddresses() async {
     try {
       final List<NetworkInterface> interfaces = await NetworkInterface.list(
         type: InternetAddressType.IPv4,
       );
-      for (final NetworkInterface interface in interfaces) {
-        for (final InternetAddress address in interface.addresses) {
-          if (!address.isLoopback && !address.address.startsWith('169.254.')) {
-            return address.address;
-          }
-        }
-      }
+      return rankLanAddresses(<LanAddressCandidate>[
+        for (final NetworkInterface interface in interfaces)
+          for (final InternetAddress address in interface.addresses)
+            LanAddressCandidate(
+              address: address.address,
+              interfaceName: interface.name,
+            ),
+      ]);
     } on Object catch (error) {
-      debugPrint('[sync] LAN: could not read this PC\'s address ($error).');
+      debugPrint(
+        '[sync] LAN: could not list the addresses of this PC ($error).',
+      );
+      return const <LanAddressCandidate>[];
     }
-    return null;
   }
 }
 

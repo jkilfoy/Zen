@@ -123,6 +123,32 @@ abstract final class LanFields {
   static const String document = 'document';
 }
 
+/// §11.6.4. What kind of thing went wrong, for callers that re-word.
+///
+/// The message on a [LanSyncFailure] is written for the **sync** status line,
+/// where "Open Zen on your PC to sync." is the likeliest cause of a connection
+/// that goes nowhere. During *pairing* it is the wrong guess and sends the user
+/// looking in the wrong place — reported from a real build, where the PC was
+/// open and the address was the fault (D-M7-17). So the kind travels with the
+/// message and the pairing screens say something more useful, rather than
+/// matching on message text, which is a coupling that breaks silently the first
+/// time the copy is reworded.
+enum LanFailureKind {
+  /// The connection could not be established at all: nothing listening, an
+  /// address that does not route, or a firewall swallowing the packets.
+  unreachable,
+
+  /// A connection was made, but the answer did not arrive in time.
+  timedOut,
+
+  /// The two ends do not speak the same protocol version.
+  protocolMismatch,
+
+  /// Something was refused after it was read: bad key, stale message, a body
+  /// that would not parse.
+  refused,
+}
+
 /// §11.6.4. Why a LAN exchange could not be completed.
 ///
 /// A [SyncTransport.fetchPeerSnapshots] failure becomes a per-transport status
@@ -132,7 +158,10 @@ abstract final class LanFields {
 @immutable
 final class LanSyncFailure implements Exception {
   /// Records a refusal or a failure, described by [message].
-  const LanSyncFailure(this.message);
+  const LanSyncFailure(this.message, {this.kind = LanFailureKind.refused});
+
+  /// What sort of failure this is, for callers that word it differently.
+  final LanFailureKind kind;
 
   /// §11.6.4's mandated copy for the skew failure, which is otherwise silent.
   ///

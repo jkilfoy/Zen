@@ -1211,6 +1211,98 @@ revocation call would be product behaviour §11.6.4 does not describe. So the
 confirmation states it: the other device keeps a key that no longer opens
 anything, and its own list is where it is removed from.
 
+### M7 review items, from the first two-device run (2026-09-25)
+
+L-1 to L-6 passed. **L-7 and L-10 both failed**, and the checklist could go no
+further. The report: the phone scanned the QR, appeared to work for about three
+seconds, then showed `"Open Zen on your PC to sync."` in red. Typing the address
+by hand failed identically. The address the PC displayed was `172.26.240.1`.
+
+**D-M7-15 — The desktop advertised an address no phone can reach.**
+`LanController.localAddress()` returned the *first* non-loopback, non-link-local
+IPv4 address `NetworkInterface.list()` offered. On the owner's machine that
+enumeration is:
+
+```
+vEthernet (WSL)    172.26.240.1
+Wi-Fi 2            192.168.0.228
+```
+
+so it returned WSL2's host-only virtual address, which is unroutable from
+anything but that PC. The three-second pause was `LanTimeouts.connect` expiring
+on a TCP connect that could never complete. **L-10 failed for the same reason
+rather than independently** — the address typed was the one the PC displayed —
+which means §11.6.4's "mandatory, not optional" manual path was still untested
+after two attempts at it.
+
+Two things are now different.
+
+*The ranking.* `rankLanAddresses` in `zen_sync` drops loopback and link-local,
+then ranks what remains in three tiers: interfaces whose names look like real
+hardware, then ones that say nothing either way, then ones that look virtual
+(`vEthernet`, `WSL`, `Hyper-V`, `VirtualBox`, `VMware`, `Docker`, `Tailscale`,
+`ZeroTier`, VPN tunnels). **The virtual check runs first and that order is
+load-bearing**: `vEthernet (WSL)` contains the substring `ethernet`, so a
+physical-first test ranks WSL's adapter as a network card — the defect itself,
+one layer down. **The name is a ranking signal and never an exclusion**, because
+a heuristic that excluded would eventually hide the only working address on
+somebody's machine, and a wrong default the user can correct is recoverable
+where a hidden address is not.
+
+It is pure and lives in `zen_sync`, not in the provider that calls it: §11.7
+keeps decisions out of providers, and `NetworkInterface.list()` is the part no
+test can drive. `zen_app` enumerates and passes the results in. Twelve tests
+cover it, including the owner's exact adapter list as a regression case.
+
+*The choice.* D-M7-11 already conceded the address was "a guess — try another
+from your network settings if the phone cannot reach it". That concession was
+right and the UI contradicted it: one address was shown and no other was
+reachable from inside the app, so a wrong guess was unrecoverable without
+leaving Zen. The pairing screen now lists every candidate with its interface
+name, defaults to the best-ranked, and switches the QR and the text together
+when one is tapped. **The code does not change on a switch** —
+`LanPairingInvitation.withHost` replaces the host alone — because a new code
+would invalidate whatever the user had already typed into the phone, making the
+act of correcting a wrong address break the pairing it was meant to fix.
+
+The ranking is a heuristic and will be wrong on some machine eventually. That is
+the reason the list is shown rather than the reason to rank harder.
+
+**D-M7-16 — Windows Firewall was investigated and is not implicated.**
+No allow rule for `zen_app.exe` existed on the owner's machine, and the firewall
+was enabled on all three profiles with inbound defaulting to block, so it was a
+live second hypothesis. It is ruled out: the owner confirmed the phone reaches
+`192.168.0.228:51789` without one. Their Wi-Fi is on the **Private** profile,
+which is the permissive case. No rule is created and none is documented; if it
+ever does bite, the installer is the place to fix it, which is M8's.
+
+**D-M7-17 — A LAN failure now carries its kind, and pairing words it
+differently.**
+`"Open Zen on your PC to sync."` was shown for *every* connection that went
+nowhere — a wrong address, a firewall, a different Wi-Fi network, as well as a
+PC that genuinely is not running Zen. It is the right guess on the sync path,
+where the desktop being closed is much the likeliest cause. During pairing it is
+the wrong guess and it cost a diagnosis: the owner had Zen open on the PC and
+was told to open it.
+
+`LanSyncFailure` now carries a `LanFailureKind`, and the pairing screens re-word
+`unreachable` and `timedOut` to name the address actually dialled — *"Could not
+reach 172.26.240.1:51789. Check that this address is the one your PC is showing,
+and that both devices are on the same Wi-Fi network."* The sync status line
+keeps the short sentence.
+
+Branching on a kind rather than matching the message text is the point: text
+matching would have broken silently the first time the copy was reworded, and
+this copy is the kind that gets reworded.
+
+**What this episode says about the suite.** Nothing here was findable headlessly.
+77 M7 tests passed against a loopback server, and loopback is precisely the
+configuration in which an address-selection bug cannot exist — `127.0.0.1` is
+always reachable. The fourth defect of the project to arrive from hardware
+rather than from tests, after D-M6-20's two triggers and D-M6-21's spacing. The
+ranking now has tests; the thing those tests cannot establish is which address
+actually carries traffic on a given network.
+
 ### What M7's automated tests do not establish
 
 - **No two-device run has happened.** Everything is loopback: one process, one
@@ -1246,7 +1338,7 @@ that has never run.
 
 | Milestone | Verified | How |
 |---|---|---|
-| M7 | **No — code complete, hardware outstanding** | Everything in §11.13.1's left-hand column is proved: **77 M7 tests** in `zen_sync` against a real `shelf` listener on `127.0.0.1` reached with a real HTTP client, covering the three endpoints, the 1 KiB and 16 MiB body caps, every status code, HKDF's pinned salt and length, per-pairing keys, trial decryption past two wrong keys, nonce freshness over five hundred seals, the constant-time code comparison, the five-attempt window, the clock-skew copy verbatim, §11.6.1's all-or-nothing parsing reaching LAN input, and the **full one-round-trip exchange in which two orchestrators over two datasets converge field-for-field and a second pass changes nothing**. Plus six more in `zen_app`: five widget tests over §11.8's LAN section, rendering both halves of §11.6.4's asymmetry on one host, and one controller test for the PC's LAN-only status line. **The suite is green at 942 tests** — 349 in `zen_domain`, 166 in `zen_sync`, 207 in `zen_data`, 220 in `zen_app` — with `dart analyze --fatal-infos --fatal-warnings` and `dart format` clean across all four packages, and the §11.12 item 3 convergence simulation still passing over its 60 seeds. **The hardware column is entirely unmet**: no two-device run, no mDNS across hosts, no Windows Firewall prompt, no Wi-Fi drop-out, no real QR scan, and `nsd`, `mobile_scanner` and the Windows build have never run at all. **L-1 to L-19 in `MANUAL_VERIFICATION.md` are the checklist**, and the milestone is not done until the owner confirms them. **One defect the suite did catch before any hardware could:** the client timeout wrapped only the response read and not `send`, so a desktop that accepted a connection and then went silent would have hung the pass forever, taking every later trigger with it — the exact NFR-1 failure §11.6.4 says the timeout exists to prevent. It was found by the loopback test that never answers, not by review. |
+| M7 | **No — code complete, hardware outstanding** | Everything in §11.13.1's left-hand column is proved: **77 M7 tests** in `zen_sync` against a real `shelf` listener on `127.0.0.1` reached with a real HTTP client, covering the three endpoints, the 1 KiB and 16 MiB body caps, every status code, HKDF's pinned salt and length, per-pairing keys, trial decryption past two wrong keys, nonce freshness over five hundred seals, the constant-time code comparison, the five-attempt window, the clock-skew copy verbatim, §11.6.1's all-or-nothing parsing reaching LAN input, and the **full one-round-trip exchange in which two orchestrators over two datasets converge field-for-field and a second pass changes nothing**. Plus six more in `zen_app`: five widget tests over §11.8's LAN section, rendering both halves of §11.6.4's asymmetry on one host, and one controller test for the PC's LAN-only status line. **The suite is green at 956 tests** — 349 in `zen_domain`, 180 in `zen_sync`, 207 in `zen_data`, 220 in `zen_app` — with `dart analyze --fatal-infos --fatal-warnings` and `dart format` clean across all four packages, and the §11.12 item 3 convergence simulation still passing over its 60 seeds. **The hardware column is entirely unmet**: no two-device run, no mDNS across hosts, no Windows Firewall prompt, no Wi-Fi drop-out, no real QR scan, and `nsd`, `mobile_scanner` and the Windows build have never run at all. **L-1 to L-19 in `MANUAL_VERIFICATION.md` are the checklist**, and the milestone is not done until the owner confirms them. **One defect the suite did catch before any hardware could:** the client timeout wrapped only the response read and not `send`, so a desktop that accepted a connection and then went silent would have hung the pass forever, taking every later trigger with it — the exact NFR-1 failure §11.6.4 says the timeout exists to prevent. It was found by the loopback test that never answers, not by review. |
 | M6 | **Yes** | **Confirmed by hand on 2026-09-24:** the owner built and deployed to Windows and to a real Android device and ran **S-1 through S-32** — the Windows folder sync, the whole Android SAF path including persisted grants and revocation, export, import and restore, the recovery screen, the trigger behaviour after D-M6-20, and the button spacing of D-M6-21. §11.13.1’s hardware column for M6 is satisfied: "The Android SAF path needs a real device and is verified by hand." The two silent failure modes feared beforehand — SAF mangling the `.json` extension, and delete-then-rename leaving a `… (1).json` duplicate — did not occur. The headless suite is green at 859 tests: 349 in `zen_domain`, 89 in `zen_sync`, 207 in `zen_data`, 214 in `zen_app`. **The convergence simulation of §11.12 item 3 passes over 60 seeds**, against two real Drift databases exchanging snapshots through a real shared directory, asserting the replicas are field-for-field identical and that every §3.7 invariant holds; its coverage assertion requires all sixteen user operations to occur across the seeds, and it is what caught the archive sweep never firing (D-M6-13). `dart analyze --fatal-infos --fatal-warnings` clean across all four packages, `dart format` clean. **`LanSyncTransport` is deliberately absent** — it is M7 — and the orchestrator is already n-ary and multi-transport, with a two-transport test to prove it. **What the suite did not catch:** three defects came from the hardware and not from 854 passing tests — the two triggers of D-M6-20, which needed a desktop window manager and a completed pass, and the button spacing of D-M6-21. All three now have regression tests, written only once hardware pointed at them. |
 | M5 | **Yes** | §5 is fully implemented and 87 tests are green under `flutter test` in `zen_app`. **AC-4** and **AC-5** pass on the Edit Task screen, **AC-10** passes through the Archived Tasks UI *and* through Search's Restore, and **AC-11** passes via the Edit Idea entry point as well as `"Make Task"`. §11.12 item 6's golden tests exist for all three TODO-3 circle states and all three disabled variants — **on Windows only** (D-M4-8); CI skips them. HOME-5's five shortcuts, NFR-7 at 400 px, ROW-5's three distances and §11.5.5's recovery screen each have a test. Confirmed by hand on **2026-09-24** alongside M4, over the whole of `MANUAL_VERIFICATION.md`. |
 | M4 | **Yes** | The headless half: 349 tests in `zen_domain` (36 new, for `updateTask`, `logicalDayOf` and `SearchQuery`), 182 in `zen_data`, 87 in `zen_app`. **AC-1, AC-2, AC-3, AC-7** pass again as widget tests against a real in-memory database, and **AC-8, AC-9, AC-11, AC-12** pass through the screens. `dart analyze --fatal-infos --fatal-warnings` clean across all four packages, `dart format` clean. **"The app runs on both platforms" is now established by hand,** on **2026-09-24**, against `MANUAL_VERIFICATION.md`: W-1 through W-12 on Windows 10 22H2 built with Visual Studio Build Tools 2022 17.14.41, and A-1 through A-9 plus Z-1 and Z-2 on an `android-36.1` `x86_64` emulator (`Medium-Phone-API-36.1`). All accepted by the owner. Getting there needed three toolchain changes, none of them code: the VS 2022 C++ workload with CMake tools and the Windows 10 SDK, Android `cmdline-tools` plus accepted licences, and NDK 28.2.13676358 installed by hand (D-M4-16). Windows builds are run from an elevated terminal in place of Developer Mode, which is the owner's standing choice. **NFR-2 is measured and met:** about **500 ms** cold from the home screen on the phone, against a target of "under 1.5 s on a mid-range Android device". D-M4-17 has the `--trace-startup` split. |
