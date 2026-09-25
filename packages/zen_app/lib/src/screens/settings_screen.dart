@@ -26,9 +26,13 @@ class SettingsScreen extends ConsumerWidget {
 
   /// SET-3. The specification version this build implements.
   ///
-  /// Read from the document's own header when it changes; the app version comes
-  /// from the package metadata.
-  static const String specVersion = '1.11';
+  /// This has silently drifted behind `ZEN_SPEC.md` twice, because nothing was
+  /// checking. `test/spec_version_test.dart` now reads the `Document version`
+  /// row out of the specification and fails if it does not match this string,
+  /// so the next bump that forgets to come here fails CI instead of shipping an
+  /// About row that lies. The app version beside it comes from the package
+  /// metadata and cannot drift.
+  static const String specVersion = '1.15';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

@@ -178,12 +178,15 @@ lines with no dependency, which is what §11.13's "prefer deleting code to
 adding configuration" asks for. `zen_domain` additionally asserts the same rule
 as a unit test so it fails locally, not only in CI.
 
-**D-M0-8 — CI is one job on `ubuntu-latest`.**
+**D-M0-8 — CI is one job on `ubuntu-latest`, and it never builds a release.**
 §11.10 lists four steps and does not name a platform. Everything through M6 is
 verifiable headlessly on Linux (§11.13.1), so one Linux job is the simplest
-thing that satisfies the spec. The tagged-release job that builds the Windows
-installer and the signed APK needs a Windows runner and a keystore secret, and
-is added in M8.
+thing that satisfies the spec.
+
+**Corrected in M8.** This entry originally said the tagged-release job "is added
+in M8", and `ci.yaml`'s header comment said the same. Both were wrong by the
+time M8 was scoped: V1 ships from a local build, and the release workflow is
+`V2-1` in `V2_BACKLOG.md`. See D-M8-2 for why, and §11.10 as of spec v1.15.
 
 **D-M0-9 — `git config core.autocrlf false` plus `.gitattributes eol=lf`.**
 CI runs `dart format --set-exit-if-changed` on Linux while the working copy is
@@ -1329,6 +1332,190 @@ actually carries traffic on a given network.
   response, and re-merging a stale snapshot is the operation the import path
   already accepts — but nothing tests an actual replay, because nothing
   currently stops one.
+## M8 — packaging
+
+M8 produces two artifacts and the documentation needed to reproduce them. Its
+running theme is **identity**: almost everything decided here exists so that the
+next release can install over this one. Spec v1.15 was written first, because
+four of these decisions were gaps in §11.9 rather than choices left open by it.
+
+**D-M8-1 — V1 ships as `1.0.0+1`, and `versionCode` is incremented by hand.**
+`version:` in `zen_app/pubspec.yaml` was still the `flutter create` default,
+`0.1.0+1`. The MVP scope of §1.3 is complete and hardware-verified on both
+platforms, which is what `1.0.0` means; the owner chose it over a date-derived
+build number and over a pre-1.0 label.
+
+The `+1` is the APK `versionCode` and **it must never decrease** — Android
+rejects a lower one outright, and the only way past that refusal is to
+uninstall, which destroys the database. A date-derived code (`+20260925`) was
+offered precisely because it is monotonic by construction and cannot be got
+wrong from memory; it was declined in favour of a plain counter. The counter is
+therefore a thing to remember, so it is called out in three places: a comment on
+the `version:` line itself, a yellow line in `tools/package.ps1` before every
+build, and step P-2 of the M8 checklist.
+
+**D-M8-2 — CI does not build releases, and both stale references to the
+contrary are corrected.**
+`ci.yaml`'s header comment and D-M0-8 both said the tagged-release job "is added
+in M8". Both now say what is actually true: V1 ships from a local build, and the
+release workflow is `V2-1` in `V2_BACKLOG.md`. Spec v1.15 rewrites §11.10's "On
+a tag:" line to match, and M8's row in §11.13 says "**Not** the tagged-release
+workflow" in as many words.
+
+The reasoning, recorded because "add CI" is the obvious-looking thing a future
+reader will want to do: the owner's machine is the only one with the Inno Setup
+toolchain and the signing keystore, and the only place an artifact can be
+smoke-tested before it goes anywhere. A CI release job would need the keystore
+as an encrypted secret — a second copy of the one credential in this project
+whose loss is unrecoverable — in exchange for automating a build that happens
+rarely and is checked by hand afterwards regardless. It becomes worth it when
+there is a second machine or a second person. There is neither.
+
+**D-M8-3 — The release build fails when the keystore is absent. There is no
+fallback to debug keys, and the check hangs off the task graph.**
+§11.9 as of v1.15 requires this, and it is the sharpest trap in the milestone.
+`android/app/build.gradle.kts` previously read
+`signingConfig = signingConfigs.getByName("debug")` for the `release` build
+type, which was correct while M8 was unbuilt and dangerous the moment it was
+not: a debug-signed release APK installs **perfectly** on this machine's own
+device, because the debug key is already trusted there. Nothing about it looks
+wrong. It can then never be upgraded by a properly signed build without an
+uninstall, and the uninstall destroys the database. The failure has to be loud,
+and it has to happen at build time rather than at install time on a device.
+
+The check is registered on `gradle.taskGraph.whenReady` rather than written
+inside `buildTypes.release { }`. That block is configured on *every* Gradle
+invocation, so throwing there fails `flutter build apk --debug` and the Android
+side of `flutter test` on any machine without a keystore — which is every
+machine but the owner's, including a fresh clone and any future CI runner. The
+task-graph form fires only when an `assemble*Release`, `bundle*Release` or
+`package*Release` task is genuinely in the graph.
+
+Both halves were verified rather than assumed:
+`gradlew :app:assembleDebug --dry-run` succeeds with no keystore present, and
+`gradlew :app:assembleRelease --dry-run` fails with the named message.
+
+**D-M8-4 — The Windows install is per-user, and the `AppId` GUID is permanent.**
+`PrivilegesRequired=lowest`, into `%LOCALAPPDATA%\Programs\Zen`. The binary is
+unsigned by §11.9's own decision, so it already draws a SmartScreen warning;
+adding a UAC prompt on top of that is one more dialog to click past and one less
+dialog read. The data is per-user anyway, so a machine-wide install would imply
+a sharing story the application does not have.
+
+`AppId={{EA883756-EE53-4C1C-AB9A-B5BCAEA79E5D}` is a literal in
+`packaging/windows/zen.iss`, generated once and never again. Inno Setup keys
+upgrade-in-place on it: a new GUID is a different product, and installing it
+leaves two Zens on disk and two entries in Apps & features rather than upgrading
+the first. This is the Windows counterpart to the Android keystore — recoverable
+where the keystore is not, but the same class of mistake — and §11.9 had not
+mentioned it at all until v1.15.
+
+**D-M8-5 — The installer carries the Visual C++ runtime app-local.**
+The Flutter Windows release bundle contains `zen_app.exe`, `flutter_windows.dll`,
+three plugin DLLs, `sqlite3.dll` and `data\`. It does **not** contain
+`msvcp140.dll`, `vcruntime140.dll` or `vcruntime140_1.dll`, which come from the
+VC++ 2015–2022 redistributable. Checked, not assumed: the directory listing of a
+real release build has none of them.
+
+The build machine always has the redistributable, because installing the C++
+toolchain puts it there. So this failure mode appears **only** on a clean
+machine — which is exactly what M8's definition of done names, and exactly the
+configuration that is never tried before shipping. The symptom is a missing-DLL
+dialog naming nothing useful.
+
+The three DLLs are taken from the toolchain's `VC\Redist\MSVC\<v>\x64\` tree,
+which is what Microsoft licenses for app-local deployment, and deliberately not
+from `System32`, which is this machine's copy and is not redistributable.
+Chaining `VC_redist.x64.exe` was the alternative and was rejected: ~25 MB, and
+an elevation prompt that would end the per-user install of D-M8-4. App-local
+costs about 700 KB.
+
+**D-M8-6 — The uninstaller leaves the database alone, and the `.iss` says so
+where the mistake would be made.**
+`getApplicationSupportDirectory()` on Windows is `%APPDATA%\{CompanyName}\
+{ProductName}`, built by `path_provider_windows` from the version resource in
+`windows/runner/Runner.rc`. On this machine that resolves to
+`%APPDATA%\dev.zen\Zen`, confirmed by finding the live `zen.sqlite` there. It
+holds the database, the pre-merge backups of §11.6.6 and the LAN pairing keys.
+
+Two consequences, neither of which §11.9 mentioned before v1.15:
+
+1. Inno removes only what it installed, and that directory is not installed, so
+   uninstalling already spares the user's data. Correct — but correct by
+   default rather than by decision, which is how it gets broken. One
+   `[UninstallDelete]` entry added to "clean up properly" would destroy every
+   Idea and Task with no warning and no undo. There is a comment block in
+   `zen.iss` at exactly the place that entry would be written.
+2. Editing `CompanyName` or `ProductName` in `Runner.rc` — a natural thing to do
+   while polishing installer metadata — does not migrate anything. The
+   application starts empty and the real database sits on disk where nothing
+   looks for it. Recorded in `zen.iss`, in §11.9, and in the checklist.
+
+**D-M8-7 — `specVersion` is enforced by a test, not by a convention.**
+The About row reported specification v1.11 while the document was at v1.14. It
+had drifted twice, both times because the constant lives in
+`settings_screen.dart` and nothing compared it to anything;
+"remember to update it" is the approach that already failed.
+`zen_app/test/spec_version_test.dart` reads the `| Document version | x.y |` row
+out of `../../ZEN_SPEC.md` and asserts equality. It runs under `flutter test`,
+so it runs in `tools/verify.ps1` and in CI, and a spec bump that forgets the
+constant now fails the build.
+
+It asserts the file exists and that the row was found before comparing, so a
+moved specification or a reworked header table fails with the real cause rather
+than presenting as a version mismatch.
+
+**D-M8-8 — The agent did not create the keystore.**
+Standing instruction from the owner for this milestone. Everything around it is
+wired — the Gradle signing config, the `key.properties.example` template, the
+gitignore rules, the loud failure of D-M8-3, and the `keytool` command in the
+checklist — but the keystore and its passwords are created by the owner, and M8
+is not done until they confirm it is backed up off this machine. Checked at the
+start of the session: no release keystore existed, only `~/.android/debug.keystore`.
+
+**D-M8-9 — `dist/` is gitignored.**
+`tools/package.ps1` writes both artifacts to `dist/` at the repository root. A
+~12 MB installer and a ~25 MB APK per release would dominate the history of a
+repository whose source is a few hundred kilobytes, and both are reproducible
+from the tag. Nothing in V1 distributes them from here; they are copied to the
+device by hand.
+
+### What M8's automated checks establish, and what they do not
+
+Established on this machine, by running them:
+
+- `packaging/windows/zen.iss` compiles under Inno Setup 6.7.3 and produces a
+  12.4 MB installer containing the full Flutter bundle and the three
+  redistributable DLLs.
+- Compiling `zen.iss` without the defines `tools/package.ps1` passes is refused
+  with a message naming the script, so the version inside the installer cannot
+  drift from the version on it.
+- `tools/package.ps1` parses `1.0.0+1` out of `pubspec.yaml` correctly, finds
+  Inno Setup and the redistributable directory, and refuses the Android half
+  with a full explanation when `key.properties` is absent.
+- `gradlew :app:assembleDebug --dry-run` succeeds and
+  `gradlew :app:assembleRelease --dry-run` fails with D-M8-3's message.
+
+**Not established, and left to the owner's hardware run:**
+
+- **No release build of either artifact has been produced by this session.**
+  `flutter build windows --release` needs symlink support — an elevated terminal
+  or Developer Mode (D-M4-16) — and this session has neither. The installer that
+  was compiled to prove the script works used the **existing M7 bundle** and a
+  throwaway `0.0.0` version, and was deleted. Nothing version-stamped `1.0.0`
+  exists yet.
+- **No installer has been run.** Whether it installs, whether SmartScreen
+  behaves as §11.9 expects, whether the Start menu entry works, and whether a
+  second install upgrades in place rather than doubling up are all unobserved.
+- **No signed APK exists,** because no keystore exists.
+- **The app-local VC++ runtime has not been tested on a machine without the
+  redistributable,** which is the only machine where it matters. Short of a
+  clean VM, the achievable check is that the DLLs are present in `{app}` after
+  an install, which is step P-6.
+
+This is the same shape as M6 and M7, where hardware found five defects that the
+suite could not. `MANUAL_VERIFICATION.md` section **M8** is the checklist.
+
 ---
 
 ## Verification status (§11.13.1)
@@ -1338,6 +1525,7 @@ that has never run.
 
 | Milestone | Verified | How |
 |---|---|---|
+| M8 | **Not yet** — awaiting the owner's hardware run and the keystore | The headless half is done and green: the full suite is at **957 tests** (349 `zen_domain`, 180 `zen_sync`, 207 `zen_data`, 221 `zen_app`), with `dart analyze --fatal-infos --fatal-warnings` and `dart format` clean, and CI green on the GitHub runner. The packaging path is proven as far as this environment allows: `zen.iss` compiles under Inno Setup 6.7.3 into a 12.4 MB installer carrying the Flutter bundle and the three VC++ redistributable DLLs; it refuses to compile without the defines `tools/package.ps1` passes; `package.ps1` reads `1.0.0+1` from `pubspec.yaml`, locates Inno Setup and the redistributable, and refuses the Android half with a full explanation when the keystore is absent; and `gradlew :app:assembleRelease --dry-run` fails with D-M8-3's message while `assembleDebug` still succeeds. **What is not established:** no release build of either artifact exists. §11.13.1 puts all of M8 in the hardware column, and it is right — `flutter build windows --release` needs an elevated terminal (D-M4-16) and the signed APK needs a keystore that does not yet exist (D-M8-8). No installer has been run, so nothing is known about SmartScreen, the Start menu entry, or install-over-the-top. `MANUAL_VERIFICATION.md` section **M8** (P-1 to P-16) is the checklist. |
 | M7 | **Yes** | **Confirmed by hand on 2026-09-25:** the owner built and deployed to Windows and to a real Android 13 device (Galaxy S20 FE) and ran **L-1 through L-18**; **L-19** was confirmed directly from `dumpsys package dev.zen.zen_app`, whose flags read `[ HAS_CODE ALLOW_CLEAR_USER_DATA ]` with `ALLOW_BACKUP` absent. §11.13.1's hardware column for M7 is satisfied: mDNS across two hosts, the Windows Firewall prompt, a Wi-Fi drop-out and real QR scanning were all exercised, as were `nsd`, `mobile_scanner` and the Windows release build — none of which had ever run before this. The headless suite is green at 956 tests: 349 in `zen_domain`, 180 in `zen_sync`, 207 in `zen_data`, 220 in `zen_app`, with `dart analyze --fatal-infos --fatal-warnings` and `dart format` clean across all four packages. **What the suite did not catch:** D-M7-15, which stopped the feature working at all on the owner's machine — the PC advertised WSL2's host-only `172.26.240.1` and no phone could reach it. 77 passing M7 tests were silent on it because they run against loopback, and `127.0.0.1` is always reachable: an address-selection bug cannot exist in the configuration the tests use. D-M7-17 came from the same run. Both now have regression tests, written only once hardware pointed at them — the fourth and fifth defects of the project to arrive that way. |
 | M6 | **Yes** | **Confirmed by hand on 2026-09-24:** the owner built and deployed to Windows and to a real Android device and ran **S-1 through S-32** — the Windows folder sync, the whole Android SAF path including persisted grants and revocation, export, import and restore, the recovery screen, the trigger behaviour after D-M6-20, and the button spacing of D-M6-21. §11.13.1’s hardware column for M6 is satisfied: "The Android SAF path needs a real device and is verified by hand." The two silent failure modes feared beforehand — SAF mangling the `.json` extension, and delete-then-rename leaving a `… (1).json` duplicate — did not occur. The headless suite is green at 859 tests: 349 in `zen_domain`, 89 in `zen_sync`, 207 in `zen_data`, 214 in `zen_app`. **The convergence simulation of §11.12 item 3 passes over 60 seeds**, against two real Drift databases exchanging snapshots through a real shared directory, asserting the replicas are field-for-field identical and that every §3.7 invariant holds; its coverage assertion requires all sixteen user operations to occur across the seeds, and it is what caught the archive sweep never firing (D-M6-13). `dart analyze --fatal-infos --fatal-warnings` clean across all four packages, `dart format` clean. **`LanSyncTransport` is deliberately absent** — it is M7 — and the orchestrator is already n-ary and multi-transport, with a two-transport test to prove it. **What the suite did not catch:** three defects came from the hardware and not from 854 passing tests — the two triggers of D-M6-20, which needed a desktop window manager and a completed pass, and the button spacing of D-M6-21. All three now have regression tests, written only once hardware pointed at them. |
 | M5 | **Yes** | §5 is fully implemented and 87 tests are green under `flutter test` in `zen_app`. **AC-4** and **AC-5** pass on the Edit Task screen, **AC-10** passes through the Archived Tasks UI *and* through Search's Restore, and **AC-11** passes via the Edit Idea entry point as well as `"Make Task"`. §11.12 item 6's golden tests exist for all three TODO-3 circle states and all three disabled variants — **on Windows only** (D-M4-8); CI skips them. HOME-5's five shortcuts, NFR-7 at 400 px, ROW-5's three distances and §11.5.5's recovery screen each have a test. Confirmed by hand on **2026-09-24** alongside M4, over the whole of `MANUAL_VERIFICATION.md`. |
@@ -1345,57 +1533,110 @@ that has never run.
 | M3 | **Yes** | 182 tests green under `flutter test` in `zen_data`, plus 313 in `zen_domain` (16 new there, for EOD-2A, INV-8 and INV-9). Sixty-seven of the 182 are constraint tests written in raw SQL with the repositories bypassed: every `CHECK`, both partial unique indexes, all seven triggers, the foreign keys and the cascades are attacked and required to fail, and each assertion names the constraint that fired, so a test cannot pass because some other constraint objected first. AC-6, AC-8, AC-9 and AC-10 pass against a real in-memory database, with AC-8/9/10 reaching the partial index rather than an application check. The §11.5.3 harness is in place: `drift_schemas/drift_schema_v1.json` is committed and a test verifies the live schema against it. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean. §11.13.1 puts all of M3 in the left-hand column and that held — Drift ran headlessly throughout and nothing here needs real hardware. |
 | M2 | **Yes** | 297 tests green under `dart test` (223 before M2, so 74 new), covering AC-13 through AC-19, every step and every field rule of §9.3, and the four property tests of §11.12 item 2 — order-independence, idempotence, invariant preservation against `datasetInvariantFailures`, and no resurrection — each over 300 seeds with the seed in every failure message. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean, and `zen_domain` still declares no dependency that touches IO. Pure Dart, so §11.13.1 puts this entirely in the left-hand column: there is nothing here that needs real hardware. |
 | M1 | **Yes** | 223 tests green under `dart test`, covering every rule in §4, every invariant in §3.7, the validation in §3.1 and §3.5, the EoD calculator at exact boundary instants including both DST transitions, and AC-1, AC-2, AC-3 and AC-7 as pure domain tests. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean, and `zen_domain` still declares no dependency that touches IO (`test/architecture_test.dart`). |
-| M0 | **Yes** | Flutter 3.47.5 / Dart 3.13.4 installed to `C:\src\flutter` on 2026-09-22 (archive SHA-256 checked against the release manifest). Every step of §11.10 run locally and green: `pub get` in all four packages, `dart analyze --fatal-infos --fatal-warnings` × 4 with no issues, `dart format --set-exit-if-changed`, `tools/check_no_datetime_now.sh`, `dart test` × 2, `flutter test` × 2. **Not yet observed on the GitHub Actions runner** — the workflow has never executed, since the repository has no remote. See the open item below. |
+| M0 | **Yes** | Flutter 3.47.5 / Dart 3.13.4 installed to `C:\src\flutter` on 2026-09-22 (archive SHA-256 checked against the release manifest). Every step of §11.10 run locally and green: `pub get` in all four packages, `dart analyze --fatal-infos --fatal-warnings` × 4 with no issues, `dart format --set-exit-if-changed`, `tools/check_no_datetime_now.sh`, `dart test` × 2, `flutter test` × 2. **Now also observed on the GitHub Actions runner.** The repository gained a remote (`github.com/jkilfoy/Zen`) and **thirteen CI runs have completed, all green**; run #13 is on `db7e8ec` with every step passing, including `dart format --set-exit-if-changed` on Linux against a Windows-authored working copy, which is the case D-M0-9 exists to serve. |
 
 Nothing in this table may be treated as complete until its column reads "Yes".
 
-### Open verification items
+### Known limitations at V1
 
-- **The Windows build is confirmed working. This item is closed.** The owner has
-  built and installed on Windows from an elevated PowerShell repeatedly, most
-  recently on 2026-09-25, and it succeeds every time. `file_selector_windows`,
-  the one native plugin M6 added there, compiles and links.
+**Nothing here is pending.** This section was called "Open verification items"
+through M0–M7, and at M8 every entry in it was either closed or restated as a
+limitation of the finished project. A limitation is something the project does
+not do and has decided not to do for V1; it is not work left half-finished. Each
+one below says which, and where the follow-up lives if it deserves one.
 
-  The earlier entry recorded this as unverified because an *agent* could not run
-  it: `flutter build windows` needs an elevated terminal or Developer Mode for
-  symlink support (D-M4-16), and stops at "Building with plugins requires symlink
-  support" without one. That is a constraint on the agent's environment, not a
-  defect in the project, and it should not be re-investigated. A future session
-  that cannot build for Windows should say so and hand the build to the owner
-  rather than treating it as a problem to solve.
+#### Closed
 
-  The Android build was checked on 2026-09-24: `flutter build apk --debug`
-  succeeded against `minSdk` 26, so `saf_util`, `saf_stream` and
-  `file_selector_android` compile and resolve.
+- **The Windows build works.** The owner builds and installs from an elevated
+  PowerShell, most recently on 2026-09-25, and it succeeds every time.
+  `file_selector_windows`, the one native plugin M6 added there, compiles and
+  links.
 
-- **The Android SAF code was confirmed on a device on 2026-09-24**, through
-  S-8 to S-15. The two failure modes flagged here before that — SAF mangling the
+  This was recorded as unverified for a long time because an *agent* cannot run
+  it: `flutter build windows` needs symlink support, and Developer Mode is off
+  on this machine by the owner's standing choice (D-M4-16), so an unelevated
+  session stops at "Building with plugins requires symlink support". That is a
+  constraint on the agent's environment and **not a defect in this project**. It
+  should not be re-investigated. A session that cannot build for Windows should
+  say so and hand the build to the owner. `tools/package.ps1` now detects the
+  unelevated case and prints exactly that before the build rather than leaving
+  it to be rediscovered from Flutter's error.
+
+- **The Android SAF path was confirmed on a device on 2026-09-24**, through
+  S-8 to S-15. The two failure modes flagged beforehand — SAF mangling the
   `.json` extension, and delete-then-rename leaving a `… (1).json` duplicate —
-  did not occur. This item is closed.
+  did not occur.
 
-- **Three of M6's defects came from hardware, not from the suite.** The two
-  triggers of D-M6-20 and the button spacing of D-M6-21 were all found by the
-  owner on real builds while 854 tests passed. Each now has a regression test,
-  but each was written after the fact. The pattern is worth carrying into M7,
-  whose LAN transport has a far larger surface that only two real devices on
-  one network can exercise (§11.13.1).
+- **`ci.yaml` has run, and it is green.** This was the longest-standing open
+  item: the workflow was written against commands proven locally but had never
+  executed, because the repository had no remote. It now has one
+  (`github.com/jkilfoy/Zen`), and **thirteen runs have completed, all
+  successful**. Run #13 is on `db7e8ec`, the commit M8 started from, and every
+  step passed: `subosito/flutter-action@v2` at the pinned Flutter 3.47.5, the
+  Drift regeneration and clean-tree check, `dart analyze --fatal-infos
+  --fatal-warnings` across all four packages, `dart format
+  --set-exit-if-changed`, the `DateTime.now()` guard, and all four test suites.
 
-- **The delete-then-rename window on Android is accepted, not measured.** §11.6.3 records that SAF offers no atomic replace, so there is a moment when this replica’s snapshot file does not exist. The argument that this is acceptable — absent is not torn, and a missing peer file costs one sync round — is sound, but it is an argument rather than an observation. If it ever proves to matter, the generation-numbered scheme §11.6.3 names is the upgrade, and it changes the filename convention on both platforms.
+  That settles the two specific worries recorded with it. The action pin
+  resolves. And the Linux-versus-Windows line-ending handling of D-M0-9 works:
+  `dart format --set-exit-if-changed` passes on the Linux runner against a
+  working copy authored on Windows, which is the case `.gitattributes` exists
+  to serve and the one that would have failed loudly.
 
-- **Nothing has run against a real folder-sync client.** The convergence simulation exchanges snapshots through a local directory, which is what Syncthing or a cloud drive presents — but not how it behaves. Partial files mid-replication, conflict copies (`… sync-conflict-….json`), and a peer’s file arriving before its contents do are all real and none is exercised. A conflict copy is at least harmless by construction: it does not match `zen-snapshot-*.json` unless the client preserves the extension, and if it does, the body’s `replicaId` still decides. S-15 is the step that would put this to the test.
+- **Three of M6's defects, and two of M7's, came from hardware rather than from
+  the suite** — D-M6-20's two triggers, D-M6-21's button spacing, D-M7-15's
+  address selection and D-M7-17's error copy. Each now has a regression test,
+  and each was written after the fact. This is closed as an item because the
+  lesson was acted on: M8 ships with a written hardware checklist for the same
+  reason, and §11.13.1's instruction to stop and hand over was followed at every
+  milestone that needed it. It is left here as the honest record of how five of
+  this project's defects were actually found.
 
-- **`ci.yaml` has never run.** It is written against the same commands proven
-  locally, but the repository has no GitHub remote yet, so the workflow, the
-  `subosito/flutter-action@v2` pin and the Linux-vs-Windows line-ending
-  handling are unproven. This resolves the first time the repository is pushed.
+#### Limitations of the finished project
 
-- **`PRAGMA integrity_check` scales with database size.** D-M3-11 put it on
-  every open to satisfy §11.5.5, and it is a full scan of every page. It is not
-  a startup cost worth acting on today — see D-M4-17, where the whole of
-  `main()` measures 42 ms — but it grows with the file, and this app is meant
-  to run for years. Worth re-measuring, not worth pre-optimising.
+- **The delete-then-rename window on Android is accepted, not measured.**
+  §11.6.3 records that SAF offers no atomic replace, so there is a moment when
+  this replica's snapshot file does not exist. The argument that this is
+  acceptable — absent is not torn, and a missing peer file costs one sync round
+  — is sound, but it is an argument rather than an observation, and V1 ships it
+  as an argument. The generation-numbered scheme that removes the window
+  entirely is **V2-10**; it changes the filename convention on both platforms,
+  which is why it is not a late patch.
 
-- **The goldens exist on Windows only** (D-M4-8). The Linux CI runner skips
-  them, so they are not a check on every push, only on every local
-  `tools/verify.ps1`. Once `ci.yaml` has run at least once, a second set can be
-  generated there with `--update-goldens` and selected by platform.
+- **Nothing has run against a real folder-sync client.** The convergence
+  simulation exchanges snapshots through a local directory, which is what
+  Syncthing or a cloud drive *presents* — but not how one *behaves*. Partial
+  files mid-replication, conflict copies (`… sync-conflict-….json`), and a
+  peer's file arriving before its contents are all real, and none is exercised.
+  One is harmless by construction: a conflict copy does not match
+  `zen-snapshot-*.json` unless the client preserves the extension, and if it
+  does, the body's `replicaId` still decides. The others are untested. Tracked
+  as **V2-15**.
+
+- **The goldens run on Windows only** (D-M4-8). They are generated on and
+  selected by the host platform, so the Linux CI runner skips them: they are a
+  check on every `tools/verify.ps1`, not on every push. Now that CI has actually
+  run, generating a Linux set with `--update-goldens` and selecting by platform
+  is straightforward — tracked as **V2-16**. Until then, a visual regression to
+  the TODO-3 circle states is caught locally and not in CI.
+
+- **`PRAGMA integrity_check` runs on every database open and scales with file
+  size.** D-M3-11 put it there to satisfy §11.5.5, and it is a full scan of
+  every page. It is not a startup cost worth acting on today — D-M4-17 measures
+  the whole of `main()` at 42 ms, against NFR-2's 1.5 s budget — but it grows
+  with the file, and this application is meant to run for years. Worth
+  re-measuring rather than pre-optimising; tracked as **V2-17**.
+
+- **Replay inside the five-minute LAN window is accepted, not prevented.** Spec
+  v1.14 states this plainly and it has not changed. The cost is bounded — the
+  attacker cannot read the response, and re-merging a stale snapshot is exactly
+  what the import path already accepts — but nothing tests an actual replay,
+  because nothing currently stops one. Tracked as **V2-18**.
+
+- **`targetSdk` 37 is unreachable from here.** The owner's device runs Android
+  13, so the local-network restriction §11.6.4 warns about can never be observed
+  by hand on this hardware. The manifest carries the warning in a comment beside
+  the permission, and `build.gradle.kts` pins `targetSdk = 36` with a note. This
+  is a limitation of the verification environment, permanently, and it is the
+  reason raising `targetSdk` is a change that must be reasoned about rather than
+  tested.

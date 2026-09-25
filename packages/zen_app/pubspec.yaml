@@ -6,7 +6,14 @@ description: >-
   The android/ and windows/ platform folders are generated with
   `flutter create --platforms=windows,android .` in M4; see DECISIONS.md.
 publish_to: none
-version: 0.1.0+1
+# SPEC 11.9. The one version number: `x.y.z` is the Inno Setup installer
+# version, the APK `versionName` and what SET-3's About row shows; the integer
+# after `+` is the APK `versionCode`.
+#
+# `versionCode` MUST NEVER DECREASE. Android rejects a lower one outright, and
+# the only way past that refusal is to uninstall, which destroys the local
+# database. Increment it on every release that leaves this machine.
+version: 1.0.0+1
 
 environment:
   sdk: ^3.13.0

@@ -131,6 +131,42 @@ elevated terminal.
 and what closed it, and is the script to re-run after a change that could
 plausibly affect any of it.
 
+## Cutting a release
+
+§11.9. Both artifacts are built locally, from an **elevated** PowerShell:
+
+```powershell
+.\tools\package.ps1
+```
+
+It reads the version from `packages/zen_app/pubspec.yaml`, builds and packages
+Windows with [Inno Setup](https://jrsoftware.org/isinfo.php)
+(`winget install -e --id JRSoftware.InnoSetup`), builds and signs the APK, and
+writes both to `dist/`. `-WindowsOnly` and `-AndroidOnly` do one half.
+
+Elevation is for symlink support, which `flutter build windows` requires;
+Developer Mode is off on the owner's machine by standing choice (D-M4-16). The
+script says so before the build rather than leaving Flutter's error to be
+decoded.
+
+Three things are permanent and the project's ability to upgrade in place depends
+on all three. They are spelled out in `packaging/windows/zen.iss`, in
+`android/key.properties.example` and in §11.9; in short:
+
+| Never change | Why |
+|---|---|
+| The `AppId` GUID in `zen.iss` | Inno keys upgrade-in-place on it. A new GUID installs a *second* Zen beside the first |
+| The signing keystore, and its passwords | A differently signed APK cannot upgrade an install. The only way past is an uninstall, which **destroys the database**. Back it up off-machine |
+| `CompanyName` / `ProductName` in `windows/runner/Runner.rc` | They decide where `%APPDATA%\dev.zen\Zen` is. Editing either does not migrate the database — the app just starts empty |
+
+And `versionCode` — the number after `+` in `pubspec.yaml` — must never
+decrease, for the same reason: Android refuses the install outright, and the way
+past it is the uninstall above.
+
+**Releases install over the top. Zen is never uninstalled.** An install that
+demands one first is the signal that something is wrong with the signing
+identity, not an inconvenience to click through.
+
 ## Conventions
 
 - Requirement IDs from the spec are named in doc comments where a rule is
@@ -150,7 +186,7 @@ still waiting on real hardware (§11.13.1).
 
 | Milestone | State |
 |---|---|
-| M0 — repository skeleton | **done** — every §11.10 step green locally; `ci.yaml` itself unproven until first push |
+| M0 — repository skeleton | **done** — every §11.10 step green locally and on the GitHub Actions runner |
 | M1 — `zen_domain` model and rules | **done** |
 | M2 — merge | **done** — `NameUnionMergeStrategy` per §9.3, with property tests over many seeds |
 | M3 — `zen_data` | **done** — 313 domain + 182 data tests green; every constraint has a test that attempts the violation |
@@ -158,4 +194,4 @@ still waiting on real hardware (§11.13.1).
 | M5 — remaining screens | **done** — §5 fully implemented; goldens run on Windows only (D-M4-8) |
 | M6 — `zen_sync` core | **done** — S-1 to S-32 confirmed by hand on Windows and a real Android device, including the whole SAF path. Three defects found there and fixed (D-M6-20, D-M6-21) |
 | M7 — LAN transport | **done** — L-1 to L-19 confirmed by hand on Windows and a real Android 13 device. One defect found there that the 77 loopback tests could not see: the PC advertised WSL2's virtual adapter (D-M7-15) |
-| M8 — packaging | not started |
+| M8 — packaging | **scripts done, artifacts pending** — the installer script, the signing config and `tools/package.ps1` are written and exercised; no release build exists yet, because §11.13.1 puts all of M8 on real hardware. `MANUAL_VERIFICATION.md` section M8 is the checklist |

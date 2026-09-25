@@ -1,0 +1,20 @@
+# ZEN_SPEC.md section 11.9. Copy to `key.properties` beside this file and fill in.
+#
+# `key.properties` and the keystore it points at are gitignored and MUST NOT be
+# committed. Losing them is the one irreversible operational mistake available
+# in this project: a future release can no longer upgrade an existing install in
+# place, and the only way to install it is to uninstall first, which destroys
+# the local database -- every Idea, every Task, and the LAN pairing keys.
+#
+# Back the keystore and these passwords up somewhere off this machine before
+# cutting a release. MANUAL_VERIFICATION.md, section "M8 -- the keystore", has
+# the keytool command and the backup step.
+#
+# `storeFile` is resolved relative to packages/zen_app/android/. An absolute
+# path outside the repository is preferable -- it keeps the keystore from ever
+# being committed by accident.
+
+storeFile=C:/path/to/zen-release.jks
+storePassword=
+keyAlias=zen
+keyPassword=

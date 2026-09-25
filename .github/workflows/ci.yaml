@@ -1,8 +1,12 @@
-# §11.10. Runs on every push and pull request.
+# §11.10. Runs on every push and pull request: analyze, format and test.
 #
-# The tagged-release job that builds the Windows installer and the signed APK
-# is added in M8; it needs a Windows runner, Inno Setup and a keystore secret,
-# none of which exist yet (§11.13.1).
+# There is deliberately no release job here. V1 ships from a local build --
+# `tools/package.ps1` on the owner's Windows machine, the only machine with the
+# Inno Setup toolchain and the signing keystore, and the only place the
+# artifacts can be smoke-tested before they go anywhere. A tagged-release job
+# needing a Windows runner, Inno Setup and the keystore as an encrypted secret
+# is `V2-1` in `V2_BACKLOG.md`. Earlier revisions of this comment and of
+# D-M0-8 said it was M8's; that was corrected when M8 was scoped.
 
 name: CI
 

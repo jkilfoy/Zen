@@ -31,6 +31,12 @@ Thumbs.db
 *.keystore
 *.jks
 key.properties
+!key.properties.example
+
+# Release artifacts from tools/package.ps1 (§11.9). Built locally, never
+# committed: a 25 MB installer per release would dominate the history, and the
+# artifact is reproducible from the tag.
+/dist/
 
 # Local run logs (e.g. verify.ps1 output redirected to a file).
 tools/result.txt

@@ -332,11 +332,108 @@ networks, so a manual host:port entry is mandatory, not optional."*
 
 ---
 
+## M8 — packaging (needs an elevated PowerShell and the phone)
+
+§11.13.1 puts **all** of M8 in the hardware column: "the Windows build needs
+Windows plus the VS 2022 C++ toolchain; the signed APK needs a keystore and a
+device to install on." Nothing below has been done by an agent. The packaging
+*scripts* were exercised as far as an unelevated session allows — `zen.iss`
+compiles, `package.ps1` parses the version and refuses correctly without a
+keystore, and the Gradle keystore guard fires on release and not on debug — but
+**no release artifact has ever been built, and no installer has ever been run.**
+
+Work through it in order. P-1 to P-4 are once-only and set up the identity every
+future release depends on.
+
+---
+
+### M8 — the keystore (once, and never again)
+
+This is the one irreversible step in the project. §11.9: losing the keystore or
+its passwords means a future release cannot upgrade an existing install, and the
+only way to install it is to uninstall first, **which destroys the database** —
+every Idea, every Task, and the LAN pairing keys.
+
+The agent deliberately did not create it (D-M8-8). Passwords are yours and
+should not pass through a transcript.
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| **P-1** | In an ordinary PowerShell, pick a directory **outside this repository** — `C:\Users\Jordan\keys\` will do — and run:<br><br>`keytool -genkeypair -v -keystore C:\Users\Jordan\keys\zen-release.jks -storetype JKS -keyalg RSA -keysize 4096 -validity 10000 -alias zen`<br><br>`keytool` comes with the JDK; if it is not on PATH, it is under the Android Studio JBR, e.g. `"$env:LOCALAPPDATA\Programs\Android Studio\jbr\bin\keytool.exe"`. It will prompt for a store password, a key password and a name; the name fields are cosmetic for sideloading and `CN=Zen` is fine. **Use the same password for both prompts** unless you have a reason not to — two differing passwords is one more thing to lose. | `zen-release.jks` exists. 10000 days is ~27 years; a shorter validity would strand you at expiry with no way to upgrade. | That it was created, and **nothing about the passwords**. |
+| **P-2** | Copy `packages\zen_app\android\key.properties.example` to `packages\zen_app\android\key.properties` and fill in the four values. `storeFile` should be the absolute path from P-1. | `git status` does **not** list `key.properties`. It is gitignored, and so is `*.jks`. | Confirm `git status` is clean of both. |
+| **P-3** | **Back the keystore up off this machine.** The `.jks` file *and* the passwords, together, somewhere that survives this disk dying — a password manager entry with the file attached is the usual answer. A copy elsewhere on this same machine is not a backup. | Two independent copies exist, at least one off this machine. | **Confirm this explicitly. M8 is not done until you do.** |
+| **P-4** | Record the fingerprint, so a future you can tell whether an APK was signed with this key:<br><br>`keytool -list -v -keystore C:\Users\Jordan\keys\zen-release.jks -alias zen` | A SHA-256 fingerprint. | Paste the SHA-256 line — it is not a secret, and it is what identifies the key later. |
+
+---
+
+### M8 — remove the development build from the phone
+
+**Do this once, before the first real release, and never again.**
+
+What is on the phone now is a debug-signed development build. Android will not
+let a release-signed APK replace it — the signing certificate differs, and that
+is exactly the check that protects you. So this one uninstall is necessary; from
+here on, uninstalling is forbidden.
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| **P-5** | If there is anything in the app on the phone you want to keep, **Settings ▸ Sync ▸ "Export snapshot…"** first, and put the file somewhere off the device. Or sync to the PC and confirm it arrived. | You have the data, or you have decided you do not need it. | Which you did. |
+| **P-6** | Uninstall Zen from the phone: long-press the icon ▸ Uninstall, or Settings ▸ Apps ▸ Zen ▸ Uninstall. Then confirm it is really gone: `adb shell pm list packages \| findstr zen` returns nothing. | No `dev.zen.zen_app` on the device. Its data directory goes with it. | That the package list is empty of it. |
+
+> **The rule from here on is permanent: every release installs over the last,
+> and Zen is never uninstalled again.** If an install ever refuses and demands an
+> uninstall first, **stop**. It means the signing key changed, and uninstalling
+> to get past it destroys the database. Check `key.properties` and the
+> fingerprint from P-4 before doing anything else.
+
+---
+
+### M8 — build the artifacts
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| **P-7** | Open an **elevated** PowerShell (`flutter build windows` needs symlink support and Developer Mode is off by choice — D-M4-16), `cd` to the repository, and run:<br><br>`powershell -ExecutionPolicy Bypass -File tools\package.ps1` | It prints the version (`1.0.0`, build `1`), builds Windows, finds Inno Setup and the VC++ redistributable, compiles the installer, then builds and signs the APK and prints its certificate. Ends with `DONE. Artifacts in …\dist`. | The full output if anything fails; otherwise just that it completed. |
+| **P-8** | Check the version banner it printed at the start. | `version 1.0.0, build 1 (APK versionCode 1)`. | — |
+| **P-9** | Look at the `signature` section near the end. | The certificate is **not** `CN=Android Debug`, and the SHA-256 matches P-4. The script fails outright if it is the debug key. | That the fingerprints match. |
+| **P-10** | `dir dist` | `Zen-1.0.0-setup.exe` (~12 MB) and `Zen-1.0.0+1.apk` (~25 MB). | The two sizes. |
+
+### M8 — the Windows installer
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| **P-11** | Run `dist\Zen-1.0.0-setup.exe`. | SmartScreen warns — the binary is unsigned and §11.9 accepts that. "More info" ▸ "Run anyway". **No UAC prompt**: the install is per-user (D-M8-4). | Whether a UAC prompt appeared. If it did, `PrivilegesRequired` is not doing its job. |
+| **P-12** | Complete the install and let it launch Zen at the end. | It installs to `%LOCALAPPDATA%\Programs\Zen` and starts. **Your existing data is all there** — the database lives in `%APPDATA%\dev.zen\Zen` and the installer does not touch it (D-M8-6). | That your Ideas and Tasks are present. This is the single most important check in M8: if the lists are empty, stop and report, because the app-data path has moved. |
+| **P-13** | `dir "$env:LOCALAPPDATA\Programs\Zen"` | `zen_app.exe`, `flutter_windows.dll`, `sqlite3.dll`, the three plugin DLLs, `data\`, **and `msvcp140.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`**. | Whether the three VC++ DLLs are there. They are what makes it run on a machine without the C++ toolchain (D-M8-5). |
+| **P-14** | Settings ▸ About. | `Zen 1.0.0+1 · specification v1.15`. | The exact string. |
+| **P-15** | Check Apps & features for "Zen". | **Exactly one** entry, version 1.0.0. | The count. More than one means the `AppId` moved, which must not happen. |
+| **P-16** | **The upgrade test.** Run the *same* installer again without uninstalling. | It installs over the top. Afterwards Apps & features still shows **exactly one** Zen, and your data is still there. | Both. This is what proves D-M8-4's `AppId` does its job, and it is the behaviour every future release depends on. |
+| **P-17** | Sanity-check the uninstaller **without confirming it**: open Apps & features ▸ Zen ▸ Uninstall, read the prompt, then **cancel**. | Nothing offers to remove your data, and cancelling leaves everything working. | That you cancelled and the app still runs. Do not complete an uninstall. |
+
+### M8 — the Android release
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| **P-18** | With the phone connected and P-6 done: `adb install dist\Zen-1.0.0+1.apk` | `Success`. | — |
+| **P-19** | Open Zen on the phone. Settings ▸ About. | `Zen 1.0.0+1 · specification v1.15`. The database starts empty — P-6 removed the old one. | The exact string. |
+| **P-20** | `adb shell dumpsys package dev.zen.zen_app \| findstr /i "versionCode versionName flags"` | `versionCode=1`, `versionName=1.0.0`, and the flags **do not** include `ALLOW_BACKUP` (§11.9, and L-19 checked the same thing in M7). | The three values. |
+| **P-21** | **The upgrade test.** Add an Idea so there is something to lose, then install the same APK over itself without uninstalling:<br><br>`adb install -r dist\Zen-1.0.0+1.apk` | `Success`, and the Idea is still there afterwards. | Whether it succeeded. If it demands an uninstall, the signing key is not what installed it. |
+| **P-22** | Do one real sync between the release build on the phone and the release build on Windows — pair if needed, then "Sync now" on both. | Both converge, as in L-1 to L-18. | That it worked. The release builds are the first ones signed differently and built with a different toolchain path; this confirms nothing about the LAN transport changed. |
+
+### M8 — the things worth doing once and remembering
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| **P-23** | If you have a second Windows machine or a clean VM, install `Zen-1.0.0-setup.exe` there. | It installs and launches with an empty database. | Whether it launched. This is the only real test of the app-local VC++ runtime (D-M8-5); P-13 only proves the files shipped. Skip if you have no clean machine, and say so. |
+| **P-24** | `git tag v1.0.0 && git push origin v1.0.0` — **only after everything above passes.** | The tag is on the commit the artifacts were built from. | That it is pushed. Nothing automated runs on the tag (V2-1); this is a bookmark so a future reader can rebuild exactly this. |
+
+---
+
 ## Not in scope here
 
-- **M8 — packaging.** The Inno Setup installer, the signed APK and the tagged
-  release workflow are a separate milestone and nothing here covers them.
+- **The tagged-release workflow.** CI does not build releases; V1 ships from
+  `tools/package.ps1` on this machine. The workflow is `V2-1` in
+  `V2_BACKLOG.md`, not M8 (§11.10, D-M8-2).
 - **Goldens** run on Windows only (D-M4-8). On the Linux CI runner they are
-  skipped, which is expected.
-- **`ci.yaml` has still never run**, because the repository has no remote. That
-  resolves on the first push.
+  skipped, which is expected. Generating a Linux set is `V2-16`.
+- **App icons** are still Flutter's defaults on both platforms. Noticed while
+  packaging, deliberately not fixed here: `V2-19`.
