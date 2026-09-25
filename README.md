@@ -156,6 +156,6 @@ still waiting on real hardware (§11.13.1).
 | M3 — `zen_data` | **done** — 313 domain + 182 data tests green; every constraint has a test that attempts the violation |
 | M4 — capture path | **done** — 87 widget tests green, and confirmed by hand on Windows and an Android emulator |
 | M5 — remaining screens | **done** — §5 fully implemented; goldens run on Windows only (D-M4-8) |
-| M6 — `zen_sync` core | **done** — S-1 to S-31 confirmed by hand on Windows and a real Android device, including the whole SAF path. Three defects found there and fixed (D-M6-20, D-M6-21) |
+| M6 — `zen_sync` core | **done** — S-1 to S-32 confirmed by hand on Windows and a real Android device, including the whole SAF path. Three defects found there and fixed (D-M6-20, D-M6-21) |
 | M7 — LAN transport | not started |
 | M8 — packaging | not started |
