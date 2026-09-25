@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "replicaId": "01a0d661-37a3-7ef7-977b-db2e332f7f47",
   "deviceName": "DESKTOP-MHM318U",
-  "generatedAt": "2026-09-25T16:28:29.730Z",
+  "generatedAt": "2026-09-25T17:18:02.540Z",
   "appVersion": "0.1.0+1",
   "ideas": [
     {
@@ -44,6 +44,16 @@
       "timeframe": "soon",
       "createdAt": "2026-09-25T03:19:50.222Z",
       "updatedAt": "2026-09-25T03:19:50.222Z"
+    },
+    {
+      "id": "01a0d89a-5fe4-796a-bb77-5daa4942c429",
+      "name": "Visit Toronto",
+      "nameNormalized": "visit toronto",
+      "tags": [],
+      "context": "See: Josh, Alexis, Michelle, Dr. Ha, Prof. Quigley, Dan Demers, Karan, Anatoliy and Phil, Jonathan",
+      "timeframe": "soon",
+      "createdAt": "2026-09-25T12:46:30.884Z",
+      "updatedAt": "2026-09-25T12:47:25.080Z"
     }
   ],
   "tasks": [
@@ -202,7 +212,7 @@
       "updatedAt": "2026-09-25T02:49:55.523Z",
       "completedAt": "2026-09-25T02:49:55.523Z",
       "isArchived": true,
-      "archivedAt": "2026-09-25T07:20:00.000Z",
+      "archivedAt": "2026-09-25T06:00:00.000Z",
       "isDeleted": false,
       "deletedAt": null,
       "sourceIdeaId": null,
@@ -226,10 +236,10 @@
         }
       ],
       "createdAt": "2026-09-25T02:50:31.427Z",
-      "updatedAt": "2026-09-25T03:14:14.235Z",
+      "updatedAt": "2026-09-25T04:10:09.878Z",
       "completedAt": "2026-09-25T03:14:14.235Z",
       "isArchived": true,
-      "archivedAt": "2026-09-25T07:20:00.000Z",
+      "archivedAt": "2026-09-25T06:00:00.000Z",
       "isDeleted": false,
       "deletedAt": null,
       "sourceIdeaId": null,
@@ -324,6 +334,95 @@
       "deletedAt": null,
       "sourceIdeaId": null,
       "sourceIdeaCreatedAt": null
+    },
+    {
+      "id": "01a0d6c3-ff30-7a4c-b242-1fd2b552ccbd",
+      "name": "Plan trip for Mom",
+      "nameNormalized": "plan trip for mom",
+      "tags": [],
+      "description": "",
+      "status": "todo",
+      "subtasks": [
+        {
+          "id": "01a0d6c3-ff2f-7e7e-a889-9d05eca40acf",
+          "name": "Txt Céline about Eric ok'd for Oct 3rd",
+          "status": "done",
+          "createdAt": "2026-09-25T04:12:44.204Z",
+          "updatedAt": "2026-09-25T04:12:51.924Z",
+          "completedAt": "2026-09-25T04:12:51.924Z"
+        },
+        {
+          "id": "01a0d6c3-ff2f-7ea4-9a71-4277394ad63e",
+          "name": "Call mom to check if Oct 3rd works for her",
+          "status": "todo",
+          "createdAt": "2026-09-25T04:12:44.204Z",
+          "updatedAt": "2026-09-25T04:12:44.204Z",
+          "completedAt": null
+        }
+      ],
+      "createdAt": "2026-09-25T04:12:44.207Z",
+      "updatedAt": "2026-09-25T04:12:51.924Z",
+      "completedAt": null,
+      "isArchived": false,
+      "archivedAt": null,
+      "isDeleted": false,
+      "deletedAt": null,
+      "sourceIdeaId": null,
+      "sourceIdeaCreatedAt": null
+    },
+    {
+      "id": "01a0d89d-4a3d-76f4-a540-a2b551c5b555",
+      "name": "Pull data from Phone onto PC",
+      "nameNormalized": "pull data from phone onto pc",
+      "tags": [],
+      "description": "Pair and do",
+      "status": "todo",
+      "subtasks": [],
+      "createdAt": "2026-09-25T12:49:41.949Z",
+      "updatedAt": "2026-09-25T12:49:41.949Z",
+      "completedAt": null,
+      "isArchived": false,
+      "archivedAt": null,
+      "isDeleted": false,
+      "deletedAt": null,
+      "sourceIdeaId": null,
+      "sourceIdeaCreatedAt": null
+    },
+    {
+      "id": "01a0d8c0-4a46-7b1b-9d32-a0610506de18",
+      "name": "Do Laundry",
+      "nameNormalized": "do laundry",
+      "tags": [],
+      "description": "",
+      "status": "todo",
+      "subtasks": [],
+      "createdAt": "2026-09-25T13:27:55.718Z",
+      "updatedAt": "2026-09-25T13:27:55.718Z",
+      "completedAt": null,
+      "isArchived": false,
+      "archivedAt": null,
+      "isDeleted": false,
+      "deletedAt": null,
+      "sourceIdeaId": null,
+      "sourceIdeaCreatedAt": null
+    },
+    {
+      "id": "01a0d97b-b8c1-7145-a403-8828117127ac",
+      "name": "Call Family Doctor",
+      "nameNormalized": "call family doctor",
+      "tags": [],
+      "description": "",
+      "status": "done",
+      "subtasks": [],
+      "createdAt": "2026-09-25T16:52:39.233Z",
+      "updatedAt": "2026-09-25T17:17:45.705Z",
+      "completedAt": "2026-09-25T17:17:45.705Z",
+      "isArchived": false,
+      "archivedAt": null,
+      "isDeleted": false,
+      "deletedAt": null,
+      "sourceIdeaId": "01a0d6c1-f0c4-77e7-a5de-0d8fa30edf25",
+      "sourceIdeaCreatedAt": "2026-09-25T04:10:29.443Z"
     }
   ],
   "tombstones": [
@@ -346,6 +445,21 @@
       "id": "01a0d679-1118-7467-8f05-f4a42b425218",
       "deletedAt": "2026-09-25T03:14:35.299Z",
       "reason": "converted"
+    },
+    {
+      "id": "01a0d6c1-f0c4-77e7-a5de-0d8fa30edf25",
+      "deletedAt": "2026-09-25T16:52:39.233Z",
+      "reason": "converted"
+    },
+    {
+      "id": "01a0d899-5907-7462-8e78-031c287327f9",
+      "deletedAt": "2026-09-25T12:46:36.664Z",
+      "reason": "deleted"
+    },
+    {
+      "id": "01a0d899-7c81-7895-8ed9-610d8688b44f",
+      "deletedAt": "2026-09-25T12:46:33.824Z",
+      "reason": "deleted"
     }
   ]
 }

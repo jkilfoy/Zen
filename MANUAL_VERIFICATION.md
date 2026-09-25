@@ -235,7 +235,13 @@ one-round-trip merge exchange are all exercised there.
 They are the only steps that confirm the defences §11.6.4 added after the
 pre-implementation review, and a "works fine" on the rest does not cover them.
 
-> **First run, 2026-09-25: L-1 to L-6 passed; L-7 and L-10 failed.** The PC
+> **M7: completed and accepted, 2026-09-25.** L-1 to L-18 confirmed by the
+> owner on Windows and a real Android 13 device (Galaxy S20 FE); L-19 confirmed
+> from `dumpsys`. The section below stands as the record of what was checked,
+> and as the script to re-run after a change that could plausibly affect any of
+> it.
+>
+> **First run, same day: L-1 to L-6 passed; L-7 and L-10 failed.** The PC
 > advertised `172.26.240.1`, which is WSL2's host-only adapter and unroutable
 > from a phone, so every connection timed out after three seconds. Both the
 > scanned and the typed path failed for that one reason. Fixed in D-M7-15 and
@@ -312,7 +318,8 @@ networks, so a manual host:port entry is mandatory, not optional."*
 
 | # | Step | Expected | Report |
 |---|---|---|---|
-| L-19 | `adb shell bmgr backupnow com.example.zen` (use your real application id) | The backup is refused or skipped, because §11.9 now sets `android:allowBackup="false"`. | The output. This is what keeps your ideas, tasks and pairing keys off Google Drive (D-M7-2). If it *does* back up, the manifest change did not take effect. |
+| L-19 | `adb shell dumpsys package dev.zen.zen_app \| grep flags` | `flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ]` — with **`ALLOW_BACKUP` absent**. Its presence would mean §11.9's manifest change did not take effect. | The flags line. This is what keeps your ideas, tasks and pairing keys off Google Drive (D-M7-2). |
+| L-19a | *Optional.* `adb shell bmgr backupnow dev.zen.zen_app` | Nothing is backed up. | The output, if you run it. This is the end-to-end version and it is **secondary**: `bmgr` needs a backup transport and a Google account, so "nothing happened" is ambiguous between refused and not configured. L-19 reads the OS's own parse of the manifest and has no such ambiguity. |
 
 ---
 
