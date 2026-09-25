@@ -6,6 +6,7 @@
 /// UI or domain code.
 library;
 
+import '../merge/replica_snapshot.dart';
 import '../model/enums.dart';
 import '../model/idea.dart';
 import '../model/item_event.dart';
@@ -188,6 +189,39 @@ abstract interface class ReplicaRepository {
 
   /// This device's name, used in pairing (§11.6.4) and snapshots (§11.6.1).
   Future<String> deviceName();
+}
+
+/// §11.6.5 step 6, §11.6.6. Replaces this replica's whole dataset in one
+/// transaction.
+///
+/// Declared as a single method for the same reason as [ConversionService]: the
+/// atomicity *is* the operation, and a caller assembling it from smaller writes
+/// would lose it (§11.4.6).
+///
+/// Two callers, both of which replace rather than reconcile:
+///
+/// * §11.6.5 step 6 applies a [MergeResult]. §11.6.5 requires wholesale
+///   replacement rather than a row-by-row upsert, because SQLite evaluates
+///   unique indexes per statement and has no deferrable constraints, so
+///   upserting transiently collides whenever two Tasks swap names.
+/// * §11.6.6's `"Restore from backup…"` applies a backup snapshot. §11.8 is
+///   explicit that this is the *only* replace in the app; `"Import snapshot…"`
+///   is a merge.
+///
+/// Implementations MUST follow STORE-4's order. The schema forces it, and
+/// getting it wrong aborts the transaction rather than failing a test.
+abstract interface class DatasetRepository {
+  /// STORE-3, STORE-4. Replaces the Ideas, Tasks and tombstones with
+  /// [snapshot]'s, in one transaction.
+  ///
+  /// Settings and the event log are untouched (MERGE-3, STORE-4): settings are
+  /// per replica and never merged, and `events` carries no foreign key
+  /// precisely so that the history of how the data got here survives the data
+  /// being replaced.
+  ///
+  /// [ReplicaSnapshot.replicaId] is not written anywhere — this device's
+  /// identity is its own (§11.5.1), not the snapshot's.
+  Future<void> replaceAll(ReplicaSnapshot snapshot);
 }
 
 /// §2. Which kind of Item a repository call is about, where one signature

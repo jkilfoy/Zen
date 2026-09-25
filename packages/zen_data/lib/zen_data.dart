@@ -41,6 +41,7 @@ export 'src/mapping/entity_mapping.dart';
 export 'src/mapping/instants.dart';
 export 'src/repository/constraint_failures.dart';
 export 'src/repository/drift_conversion_service.dart';
+export 'src/repository/drift_dataset_repository.dart';
 export 'src/repository/drift_event_log.dart';
 export 'src/repository/drift_idea_repository.dart';
 export 'src/repository/drift_replica_repository.dart';

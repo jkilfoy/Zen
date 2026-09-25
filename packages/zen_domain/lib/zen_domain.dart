@@ -36,6 +36,7 @@ export 'src/model/invariants.dart';
 export 'src/model/item_event.dart';
 export 'src/model/item_name.dart';
 export 'src/model/item_text.dart';
+export 'src/model/lan_peer.dart';
 export 'src/model/normalize.dart';
 export 'src/model/settings.dart';
 export 'src/model/subtask.dart';

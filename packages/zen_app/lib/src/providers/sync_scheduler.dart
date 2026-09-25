@@ -1,0 +1,114 @@
+/// §11.6.5. When a sync runs, as opposed to what it does.
+library;
+
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
+import 'package:zen_domain/zen_domain.dart';
+
+/// §11.6.5. "Triggers: manual `"Sync now"` on both platforms; on app foreground
+/// when `syncOnForeground`; and on a timer every `syncIntervalMinutes` while the
+/// app is open."
+///
+/// This owns the second and third. The first is the Settings button. All three
+/// end at [SyncOrchestrator.sync], which holds the single-flight lock, so they
+/// cannot overlap however they are combined.
+///
+/// **No trigger may block the UI** (§11.6.5, NFR-1), so nothing here is awaited
+/// by anything the user is waiting on, and a failed pass is swallowed — the
+/// orchestrator has already recorded it, and the Settings screen is where it is
+/// reported.
+///
+/// The same shape as `ArchiveScheduler` (EOD-3), for the same reason: the
+/// *policy* is in the specification and the *timing* needs the app lifecycle,
+/// which no other layer can see.
+final class SyncScheduler with WidgetsBindingObserver {
+  /// Schedules passes of [sync] according to [settings].
+  ///
+  /// [sync] rather than a `SyncOrchestrator`: all this needs is "run a pass",
+  /// the orchestrator's own single-flight lock is what keeps the triggers from
+  /// overlapping, and taking the narrower dependency is what lets the *timing* —
+  /// the only thing this class decides — be tested without a database.
+  SyncScheduler({
+    required Future<void> Function() sync,
+    required SettingsRepository settings,
+    // A named parameter may not begin with an underscore.
+    // ignore: prefer_initializing_formals
+  }) : _sync = sync,
+       // ignore: prefer_initializing_formals
+       _settings = settings;
+
+  final Future<void> Function() _sync;
+  final SettingsRepository _settings;
+
+  Timer? _timer;
+  StreamSubscription<Settings>? _watch;
+  bool _disposed = false;
+
+  /// Starts watching the lifecycle and the settings, and syncs if
+  /// `syncOnForeground` is set.
+  ///
+  /// The app start counts as a foreground: §11.6.5 lists "on app foreground" as
+  /// a trigger, and the first foreground of a session is the launch.
+  Future<void> start() async {
+    WidgetsBinding.instance.addObserver(this);
+    final Settings current = await _settings.read();
+    _arm(current.syncIntervalMinutes);
+
+    // Re-armed whenever the interval changes, so that a new value in Settings
+    // takes effect at once (SET-2) rather than after the old timer fires.
+    _watch = _settings.watch().listen((Settings next) {
+      _arm(next.syncIntervalMinutes);
+    });
+
+    if (current.syncOnForeground) {
+      _syncQuietly();
+    }
+  }
+
+  /// §11.6.5. "On app foreground when `syncOnForeground`."
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || _disposed) {
+      return;
+    }
+    unawaited(
+      _settings.read().then((Settings current) {
+        if (current.syncOnForeground) {
+          _syncQuietly();
+        }
+      }),
+    );
+  }
+
+  /// Stops the timer and the lifecycle observer.
+  void dispose() {
+    _disposed = true;
+    _timer?.cancel();
+    _timer = null;
+    unawaited(_watch?.cancel());
+    WidgetsBinding.instance.removeObserver(this);
+  }
+
+  /// §11.8. "`0` disables."
+  void _arm(int intervalMinutes) {
+    _timer?.cancel();
+    if (_disposed || intervalMinutes <= 0) {
+      _timer = null;
+      return;
+    }
+    _timer = Timer.periodic(
+      Duration(minutes: intervalMinutes),
+      (Timer _) => _syncQuietly(),
+    );
+  }
+
+  /// Runs a pass without anyone waiting on it or hearing about a failure.
+  ///
+  /// The orchestrator already catches every transport failure and records it in
+  /// its outcome (§11.6.5 step 3), so what this absorbs is the unexpected — and
+  /// even then, NFR-1 is explicit that capture must remain usable regardless.
+  void _syncQuietly() {
+    unawaited(_sync().catchError((Object _) {}));
+  }
+}

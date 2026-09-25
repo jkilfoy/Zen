@@ -64,6 +64,40 @@ Future<bool> confirmDelete(
       false;
 }
 
+/// §11.6.6. "Restores one … after an explicit confirmation."
+///
+/// The specification requires a confirmation here without giving its copy, so
+/// the wording is chosen and recorded (§11.13's standing instructions). Unlike
+/// [confirmDelete] this ignores `settings.confirmDestructive`: DEL-4's setting
+/// is about deleting one Item, and a restore replaces every Idea and Task on
+/// the device at once. That is not a preference to switch off.
+///
+/// Returns `true` when the user confirmed.
+Future<bool> confirmDestructiveAction({
+  required BuildContext context,
+  required String title,
+  required String message,
+  required String confirmLabel,
+}) async =>
+    await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    ) ??
+    false;
+
 /// §4.2, AC-1, TASKFORM-4. Shows a [RuleViolation]'s copy.
 ///
 /// The UI "renders [RuleViolation.message]; it never composes its own copy"

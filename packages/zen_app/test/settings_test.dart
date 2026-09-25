@@ -204,24 +204,20 @@ void main() {
     );
   });
 
-  testWidgets('SET-4: the Sync section is present and not yet wired', (
+  testWidgets('SET-4: the Sync section is present and wired', (
     WidgetTester tester,
   ) async {
+    // D-M4-9 left this section's controls disabled under a line saying sync was
+    // not built yet. M6 built it. What the section *does* is covered in
+    // `sync_settings_test.dart`; this only holds SET-4's place on the screen,
+    // beside the other settings sections.
     final ZenHarness harness = ZenHarness();
     await openSettings(tester, harness);
 
-    // D-M4-9. The controls §11.8 names, disabled, under a line saying why.
-    expect(
-      tester
-          .widget<SwitchListTile>(
-            find.widgetWithText(SwitchListTile, 'Sync through a shared folder'),
-          )
-          .onChanged,
-      isNull,
-    );
+    expect(find.text('Sync now'), findsOneWidget);
     expect(
       find.text('Sync is not built yet. Your data stays on this device.'),
-      findsOneWidget,
+      findsNothing,
     );
   });
 

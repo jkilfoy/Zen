@@ -91,6 +91,69 @@ Report anything `flutter doctor` still flags before going further.
 | A-8 | Leave the app backgrounded overnight, past 02:00, then reopen (EOD-3) | Completed Tasks have archived, under the previous day's date. | Whether the archive is right. |
 | A-9 | Force-stop the app immediately after saving something (NFR-3) | The save survives. No acknowledged write may be lost. | Anything lost. |
 
+## M6 — sync (both platforms)
+
+§11.13.1 puts most of M6 in the headless column and it is covered there: the
+codec, the orchestrator, the backup store and the file transport against
+ordinary directories are 89 tests in `zen_sync`, and the convergence simulation
+runs 60 seeds against two real databases through a real shared folder. **One
+thing is not**: "The Android SAF folder path in M6 — scoped storage,
+`ACTION_OPEN_DOCUMENT_TREE`, persisted grants, and grant revocation behave only
+on a real device."
+
+Everything below S-8 is therefore the part that cannot be established without
+your hardware. S-1 to S-7 are Windows, where the code path is `dart:io` and
+already exercised by tests, but where the *folder picker* and a real
+Syncthing-style folder are not.
+
+### M6 — Windows
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| S-1 | Settings ▸ Sync ▸ `Choose folder…`, pick an empty folder | The folder's path appears under the toggle and `Sync through a shared folder` switches on by itself. | Whether the native dialog opened and what path it returned. |
+| S-2 | Tap `Sync now` | The status line reads `Last synced …` and something like `Nothing to sync.` A file named `zen-snapshot-<replicaId>.json` appears in the folder. | The exact status line and the filename. |
+| S-3 | Open that file in a text editor | It is readable JSON holding your ideas and tasks — and **no settings**: no `endOfDay`, no `theme`, no `syncFolderLocation` (MERGE-3). | Anything settings-shaped in it. |
+| S-4 | Tap `Sync now` again without changing anything | The file's **modified time does not change** (§11.6.5 step 7 skips an unchanged write). | The before and after timestamps. |
+| S-5 | Add an idea, then `Sync now` | The file's modified time moves and the new idea is in it. | Whether it did. |
+| S-6 | Point a second Windows install — or a copy of the app with a different database — at the same folder, and sync both | Each device ends up with both devices' ideas and tasks. Nothing is lost. | Anything missing on either side. |
+| S-7 | Remove the folder from disk while sync is on, then `Sync now` | The status line reads `Sync folder not available`. **The app stays fully usable** and capture is never blocked (NFR-1, §11.6.3). | Any dialog, freeze, or blocked capture. |
+
+### M6 — Android (SAF): the part only a device can establish
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| S-8 | Settings ▸ Sync ▸ `Choose folder…` | The system folder picker opens (`ACTION_OPEN_DOCUMENT_TREE`, not a file picker). Choosing a folder stores a `content://…/tree/…` URI, which is what the subtitle shows. | The URI it stored. |
+| S-9 | `Sync now`, then look in that folder with a file manager | `zen-snapshot-<replicaId>.json` is there, with the `.json` extension intact. | The **exact filename**. SAF derives an extension from the MIME type, and a name like `…json.txt` would mean no peer ever reads it. |
+| S-10 | `Sync now` twice more | No file named `zen-tmp-…` is left behind, and no file named `zen-snapshot-… (1).json` appears. | Any file matching either. A `(1)` name means the delete-then-rename in §11.6.3 did not take, and sync is silently writing somewhere no one reads. |
+| S-11 | **Force-close the app** and reopen it. `Sync now` | It still works without re-picking the folder — the grant was persisted (`takePersistableUriPermission`). | Whether it asked you to pick again. It must not. |
+| S-12 | **Reboot the phone.** Reopen and `Sync now` | Same as S-11: the grant survives a reboot. | Whether it did. |
+| S-13 | Android Settings ▸ Apps ▸ Zen ▸ clear the app's access to that folder (or delete the folder), then `Sync now` in Zen | The status line reads `Sync folder not available`. **Capture still works.** Nothing crashes and no dialog blocks you. | Exactly what the app did. §11.6.3: "A revoked or missing grant is a normal state … **Never block capture on it.**" |
+| S-14 | `Choose folder…` again and re-pick | Sync resumes normally. | Whether it did. |
+| S-15 | Put the *same* folder on both the phone and the PC — through Syncthing, or a cloud drive folder that syncs both ways — and use both devices for a day | Both devices converge. An idea captured on the phone appears on the PC and vice versa, within one sync interval of the folder replicating. | Anything that did not arrive, and anything that arrived **twice** or with the wrong name. |
+
+### M6 — export, import and restore
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| S-16 | Windows: Settings ▸ Sync ▸ `Export snapshot…` | A save dialog opens, suggesting `zen-snapshot-<replicaId>.json`. The saved file is readable JSON. | Whether the dialog opened. |
+| S-17 | **Android:** `Export snapshot…` | A **folder** picker opens, not a save dialog — Android has no save dialog through this plugin (D-M6-11) — and the file lands in the folder you choose. | Where the file went and what it is called. |
+| S-18 | Export from one device, then `Import snapshot…` on the other | The other device gains what the file held **and keeps everything it already had**. An import is a merge, never a replace (§11.8). | Anything that disappeared. This is the one to look at hardest. |
+| S-19 | `Import snapshot…` and choose a file that is not a snapshot | A short message says it is not readable. Nothing changes and nothing crashes. | What the message said. |
+| S-20 | After at least one real sync, Settings ▸ Sync ▸ `Restore from backup…` | A list of timestamps appears. Choosing one asks `Restore this backup?` and says it cannot be undone. | Whether the confirmation appeared **before** anything changed. |
+| S-21 | Confirm the restore | Your ideas and tasks become exactly what that backup held. | Whether they did. |
+
+### M6 — the recovery screen (§11.5.5)
+
+D-M4-9 left these buttons disabled; M6 wired them. Reaching this screen means
+corrupting the database on purpose, so this is optional — but it is the only way
+to know the recovery path works before you need it.
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| S-22 | Close Zen. Open `zen.sqlite` in the app-support directory with a text editor and write a few junk characters into the middle of it. Reopen Zen | The recovery screen appears, names the problem, and says your data has not been deleted. `Restore from backup…` and `Import snapshot…` are **enabled**. | Whether they were enabled. |
+| S-23 | Tap `Restore from backup…` and pick one | It reports how much it restored and tells you to close and reopen Zen. | The message. |
+| S-24 | Close Zen and reopen it | The app starts normally with the restored data. The corrupted file is still on disk under its `…unreadable-<timestamp>` name. | Whether both are true. |
+
 ## Both — the time zone (EOD-5)
 
 | # | Step | Expected | Report |
@@ -102,10 +165,8 @@ Report anything `flutter doctor` still flags before going further.
 
 ## Not in scope here
 
-- **M6's Android SAF folder path** and **M7's LAN end-to-end** have their own
-  §11.13.1 entries and are not built yet.
-- The `"Sync"` section in Settings and the two buttons on the recovery screen
-  are deliberately present and disabled (D-M4-9). They are not defects.
+- **M7's LAN end-to-end** has its own §11.13.1 entry and is not built yet. The
+  `"Sync over the local network"` toggle is deliberately present and disabled.
 - **Goldens** run on Windows only (D-M4-8). On the Linux CI runner they are
   skipped, which is expected.
 - **`ci.yaml` has still never run**, because the repository has no remote. That

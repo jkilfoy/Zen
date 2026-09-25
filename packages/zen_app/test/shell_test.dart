@@ -6,9 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_app/src/screens/unreadable_database_screen.dart';
+import 'package:zen_app/src/sync/database_recovery.dart';
+import 'package:zen_app/src/sync/snapshot_file_exchange.dart';
 import 'package:zen_app/src/widgets/item_row.dart';
 import 'package:zen_data/zen_data.dart';
+import 'package:zen_domain/testing.dart';
 import 'package:zen_domain/zen_domain.dart';
+import 'package:zen_sync/zen_sync.dart';
 
 import 'support/harness.dart';
 
@@ -171,13 +175,14 @@ void main() {
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(
-        const UnreadableDatabaseApp(
-          DatabaseUnreadable(
+        UnreadableDatabaseApp(
+          const DatabaseUnreadable(
             originalPath: r'C:\Users\someone\zen.sqlite',
             quarantinedPath:
                 r'C:\Users\someone\zen.sqlite.unreadable-2026-09-23',
             cause: 'PRAGMA integrity_check returned "malformed"',
           ),
+          recovery: recoveryFor(canRecover: true),
         ),
       );
       await tester.pumpAndSettle();
@@ -196,14 +201,16 @@ void main() {
       );
       expect(find.textContaining('PRAGMA integrity_check'), findsOneWidget);
 
-      // D-M4-9. Both offered actions are present and disabled until M6.
+      // M6 wired both. D-M4-9 had them present and disabled; now that the
+      // unreadable file has been moved aside there is room for a fresh
+      // database, and both ways back are live.
       expect(
         tester
             .widget<FilledButton>(
               find.widgetWithText(FilledButton, 'Restore from backup…'),
             )
             .onPressed,
-        isNull,
+        isNotNull,
       );
       expect(
         tester
@@ -211,7 +218,7 @@ void main() {
               find.widgetWithText(OutlinedButton, 'Import snapshot…'),
             )
             .onPressed,
-        isNull,
+        isNotNull,
       );
     });
 
@@ -219,12 +226,13 @@ void main() {
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(
-        const UnreadableDatabaseApp(
-          DatabaseUnreadable(
+        UnreadableDatabaseApp(
+          const DatabaseUnreadable(
             originalPath: r'C:\Users\someone\zen.sqlite',
             quarantinedPath: null,
             cause: 'locked by another process',
           ),
+          recovery: recoveryFor(canRecover: false),
         ),
       );
       await tester.pumpAndSettle();
@@ -236,3 +244,18 @@ void main() {
     });
   });
 }
+
+/// §11.5.5. A [DatabaseRecovery] pointed at paths that do not exist.
+///
+/// These two tests are about what the screen *renders* — which button is live,
+/// and what the explanation underneath says — and that turns on `canRecover`
+/// alone. The restore and import paths themselves write a real database, and
+/// their parts are covered where they live: the backup store in `zen_sync`, the
+/// wholesale replace in `zen_data`.
+DatabaseRecovery recoveryFor({required bool canRecover}) => DatabaseRecovery(
+  databasePath: r'C:\Users\someone\zen.sqlite',
+  canRecover: canRecover,
+  backups: BackupStore(directoryPath: r'C:\Users\someone\backups'),
+  exchange: const DesktopSnapshotFileExchange(),
+  clock: FakeClock(base),
+);

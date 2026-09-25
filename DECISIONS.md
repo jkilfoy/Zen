@@ -87,9 +87,29 @@ four months.
 | Device time zone | `flutter_timezone` | `^5.1.0` | **5.1.0** | **Not in §11.2's table** — see D-M4-3. |
 | Database (test only) | `drift` | `^2.35.0` | **2.35.0** | A dev dependency: the widget tests build `NativeDatabase.memory()` directly rather than mocking the repositories (D-M4-15). |
 
-`file_selector`, `saf_util`, `shelf`, `http`, `cryptography`, `nsd`, `qr_flutter`
-and `mobile_scanner` are still unresolved: they are M6's and M7's, and §11.2 says
-to check each at the milestone that first needs it.
+`shelf`, `http`, `cryptography`, `nsd`, `qr_flutter` and `mobile_scanner` are
+still unresolved: they are M7's, and §11.2 says to check each at the milestone
+that first needs it.
+
+### `zen_sync` and the sync platform glue (M6)
+
+Resolved by `flutter pub get` on 2026-09-24 and taken from `pubspec.lock`. Each
+was checked on pub.dev for its current version, null-safety and maintenance
+state, as §11.2 requires.
+
+| Role | Package | Constraint | **Resolved** | Notes |
+|---|---|---|---|---|
+| Collections | `collection` | `^1.19.0` | **1.19.1** | `zen_sync`. List equality on the outcome types. |
+| Annotations | `meta` | `^1.16.0` | **1.19.0** | `zen_sync`. |
+| Paths | `path` | `^1.9.1` | **1.9.1** | `zen_sync`. Joining names onto the backup and snapshot directories; the IO itself is `dart:io`'s. |
+| IDs | `uuid` | `^4.6.0` | **4.6.0** | `zen_sync`. §11.6.3's temp-file names. The same version `zen_domain` resolves for entity ids. |
+| Desktop folder picker | `file_selector` | `^1.1.0` | **1.1.0** | `zen_app`. flutter.dev, verified publisher, Windows 10+. `getDirectoryPath` is §11.6.3's Windows picker. |
+| Android folder access | `saf_util` | `^3.1.0` | **3.1.0** | `zen_app`. `pickDirectory` is `ACTION_OPEN_DOCUMENT_TREE`; `persistablePermission: true` is `takePersistableUriPermission`. §11.2 notes `shared_storage` is discontinued and MUST NOT be used; it is not here. |
+| Android file IO | `saf_stream` | `^4.0.1` | **4.0.1** | `zen_app`. **Not optional.** `saf_util` deliberately excludes reading and writing and points at this package for them — §11.2 anticipated the pair with "with `saf_stream` if streaming is needed", and it is needed. Same publisher. |
+
+`file_selector` pulls in `file_selector_android`, which implements `openFile`,
+`openFiles` and `getDirectoryPath` — and **no save dialog**. That gap is what
+D-M6-11 is about.
 
 ---
 
@@ -793,6 +813,206 @@ are checked with `tester.getRect` in `shell_test.dart` rather than left to a
 golden, because a golden would tell you the picture changed without telling you
 which rule broke.
 
+## M6 — `zen_sync`
+
+Sixteen ambiguities in §11.6 and §11.8 were found before any code was written
+and put to the owner; all sixteen were accepted and folded into
+**`ZEN_SPEC.md` v1.11**, so they are specification, not decisions, and are not
+repeated here. Two of them were defects that would have shipped: §11.6.5 step 3
+ended the pass when no peers were found, which meant two fresh devices could
+never discover each other and the file transport would never have worked at all;
+and §11.6.2's transport signature could not supply the `generatedAt` that step 3's
+de-duplication compares.
+
+What follows is what the specification left open and this milestone chose.
+
+**D-M6-1 — `FileSnapshotTransport` writes through a `SnapshotDirectory` port.**
+§11.6.3 gives one transport with two platform mappings: an ordinary path on
+Windows and a SAF tree URI on Android. SAF needs a Flutter platform channel,
+which a pure Dart package cannot have, so the transport is written against a port
+and `zen_app` supplies `SafSnapshotDirectory` — the same shape §11.2 uses for
+`TimeZoneRules`, where "the domain declares the one-method port; the data layer
+implements it". The payoff is that everything §11.6.3 actually specifies — the
+filename, the read filter, the body-over-filename rule, the temp sweep, the
+unchanged-content check — is tested headlessly against `IoSnapshotDirectory` and a
+real temporary directory, and what is left unverifiable is only the platform
+mapping (§11.13.1).
+
+Note that `zen_sync` uses `dart:io` directly and unapologetically. §11.1 bans IO
+in `zen_domain` only; this is the package where it belongs.
+
+**D-M6-2 — The codec's internal control flow is an exception; its boundary is a
+`Result`.**
+§11.4.1 reserves exceptions for programmer error, and a malformed peer file is
+not that. But threading a `Result` through thirty nested field reads buries the
+shape of the format under plumbing, so `SnapshotCodec` throws a private
+`_Malformed` internally and converts it at every public entry point. The rule
+holds where it matters — no caller of `decode` or `fromJson` sees an exception —
+and the parsing code still reads like §11.6.1's document.
+
+**D-M6-3 — An entity's invariants are checked twice, because only one check runs
+in any given build.**
+The entity constructors `assert` their §3.7 invariants, and §11.5.2 already
+records that Dart strips asserts from release builds. So decoding a Task with
+`status: done` and no `completedAt` throws in a test and succeeds silently in the
+app the owner runs. `SnapshotCodec._guard` therefore catches `AssertionError`
+*and* re-checks `invariantFailures` afterwards, and both paths end in the same
+refusal. Without the second check, §11.6.1's all-or-nothing rule would hold in CI
+and not in production — which is the worse half to lose, because production is
+where the malformed file comes from.
+
+**D-M6-4 — The codec also checks INV-6 and INV-7, which span the dataset.**
+§11.6.1 says "a field that would break §3.7" and §3.7 includes both. A replica's
+own database enforces them — the partial unique indexes and the `inv7_*`
+triggers — so a snapshot that breaks either did not come from a healthy replica.
+This is deliberately *not* the case the merge exists to handle: that one is two
+replicas each internally consistent but disagreeing with **each other**, which is
+across snapshots, not within one. Catching it here also stops a bad file reaching
+`replaceAll`, where the same violation would surface as an aborted transaction
+with a SQL error attached.
+
+**D-M6-5 — A snapshot timestamp with no time zone is refused, not guessed.**
+§3 makes every instant UTC. A bare local-time string has no defined instant, and
+resolving it against *this* device's zone would make the same file decode
+differently on two replicas — which breaks MERGE-2 quietly rather than loudly.
+Finer-than-millisecond precision, by contrast, is truncated rather than refused:
+§3 puts a truncation at "the snapshot-parsing boundary" precisely so a peer
+cannot smuggle precision in, and a peer writing microseconds is not a reason to
+drop its data.
+
+**D-M6-6 — Which transports are enabled is injected as a function.**
+§11.6.5 runs "each **enabled** transport", and §11.8 decides enabled with
+`syncFolderEnabled` and `syncLanEnabled`. Reading those inside the orchestrator
+would make it know both the settings keys and which transport each belongs to,
+and §11.6.5 is explicit that nothing there may special-case a transport. So the
+orchestrator takes an `EnabledTransports` callback and `zen_app` closes over the
+settings. It is re-read on every pass, so turning a transport off takes effect at
+once (SET-2), and M7 adds a second entry to one list in one provider.
+
+**D-M6-7 — A failed pre-merge backup logs and the pass continues.**
+§11.6.5 step 4 says to write one and does not say what to do when it cannot be
+written. Refusing to sync would mean a full disk stops the app syncing
+altogether; merging without insurance loses the recovery path for that one pass.
+The pass continues, because §11.6.5's posture everywhere else is that nothing
+aborts it and NFR-1 forbids a sync failure from getting in the user's way. The
+failure is logged and recorded. This is the one place in M6 where the safer
+choice was not obvious, and it is recorded rather than buried.
+
+**D-M6-8 — `merged` events are appended outside `replaceAll`'s transaction.**
+§11.6.5 step 6 asks for both in one breath, but STORE-4 deliberately keeps
+`events` out of the wholesale replace, and `DatasetRepository.replaceAll` takes a
+snapshot, which carries no events. A crash between the two loses some entries
+from a log the MVP never reads back (HIST-2). That is a better trade than
+coupling the audit trail to the dataset's lifetime, which is the very thing
+STORE-4's "`events` is deliberately outside this" exists to prevent.
+
+**D-M6-9 — `syncWith` waits for an in-flight pass rather than joining it.**
+§11.6.5 step 1's single-flight rule says a second request "returns the running
+one's future". That is right for the three triggers, which are interchangeable.
+It is wrong for `"Import snapshot…"`, which carries a file the user chose:
+joining would return the other pass's outcome and discard the import silently. So
+`sync()` joins and `syncWith()` queues. Both take the same lock, so two passes
+still never overlap.
+
+**D-M6-10 — `Settings.withoutSyncFolder()` exists because `copyWith` cannot clear
+a field.**
+The `?? this.x` idiom cannot set a nullable field back to null, and
+`syncFolderLocation` is the one setting the user can genuinely clear — they picked
+a folder and want it forgotten. A dedicated method rather than a sentinel value or
+a `clearX` flag: one caller, one name, nothing to misread. `lastSyncAt` needs no
+twin, because it only ever moves forward.
+
+**D-M6-11 — Export on Android goes through SAF, not `file_selector`.**
+`file_selector_android` implements `openFile`, `openFiles` and `getDirectoryPath`,
+and **no save dialog at all**, so `getSaveLocation` would throw
+`UnimplementedError` at the moment the user tapped `"Export snapshot…"`. Import is
+fine through `file_selector` on both platforms; export asks for a destination
+folder with `saf_util` and writes with `saf_stream`. The grant it takes is
+deliberately **not** persistable — an export is one file, once, and holding a
+lasting permission on a folder picked for a single save is a permission the user
+did not agree to keep.
+
+**D-M6-12 — The recovery screen's two buttons now work, and say when they
+cannot.**
+D-M4-9 rendered §11.5.5's `"Restore from backup…"` and `"Import snapshot…"`
+disabled because both belonged to M6. They rest on the quarantine D-M3-11 already
+performs: once the unreadable file has been **moved aside**, opening the same path
+again creates a fresh database and the recovered data can be written into it. When
+it could not be moved aside there is nowhere to put one, so the buttons stay
+disabled and the screen says why. Import there is a replace rather than §11.8's
+merge — there is nothing to merge with — and the confirmation says so, rather than
+letting the word "import" imply the gentler operation it means on the Settings
+screen.
+
+**D-M6-13 — The convergence simulation shares one clock between the replicas.**
+Two independently drifting fake clocks put a Task's `createdAt` on one replica
+ahead of its `updatedAt` on the other and broke INV-5 before any merge ran. That
+is clock skew, not a merge bug, and nothing in §9 claims to survive it: §9.3
+step 4 resolves by comparing `updatedAt` **across** replicas, which only means
+anything if the two clocks agree. Real devices agree to within seconds. The
+simulation advances one shared clock, and skips the advance about one step in six
+so that identical `updatedAt` values — the case step 4's tie-breaks exist for —
+actually occur.
+
+The clock also jumps six to thirty-six hours about one step in eight. Without
+that, forty one-to-five-minute steps never cross an End-of-Day boundary and the
+archive sweep never fires: the simulation silently never archived anything. The
+coverage assertion beside it is what caught that, and is why it is there.
+
+**D-M6-14 — The convergence simulation lives in `zen_app/test/integration/`.**
+§11.12 item 3 now places it, so this records only what it cost: nothing. `zen_app`
+already depends on both `zen_data` and `zen_sync`, so no dependency arrow moved.
+It runs 60 seeds of 40 operations each in about twenty seconds under
+`flutter test`.
+
+**D-M6-15 — Sync widget tests pump a bounded number of frames instead of
+settling.**
+While a pass runs the Sync section shows a `CircularProgressIndicator`, which
+animates forever, so `pumpAndSettle` never settles and the ten-minute default
+timeout is what ends the test. Anything that reaches the orchestrator pumps a
+fixed number of short frames instead, which advances the fake clock enough for the
+repositories' futures to complete and then stops. The indicator itself is right
+for the UI and stays.
+
+**D-M6-19 — Two files were split for §11.11, the same way D-M2-8 split the merge.**
+`snapshot_codec.dart` reached 546 lines and `orchestrator.dart` 449, against
+"files stay under roughly 400". `snapshot_json.dart` now holds the typed field
+reads and the internal `MalformedSnapshot`, so what is left of the codec reads as
+§11.6.1's document; `peer_collection.dart` holds step 3, which is the one step
+of the pass with logic of its own — availability, per-transport failure
+isolation, and cross-transport de-duplication — and therefore the natural seam.
+The codec is 446 lines and stays that way: encoding and decoding one format are
+the two halves that must mirror each other, and separating them would make the
+pair easier to let drift apart than to keep in step. No behaviour changed.
+
+**D-M6-18 — `SyncScheduler` takes a callback, not the orchestrator.**
+All it needs is "run a pass", the orchestrator's own single-flight lock is what
+keeps the three triggers from overlapping, and `SyncOrchestrator` is a `final`
+class with seven repository dependencies. Narrowing it to
+`Future<void> Function()` is what lets the *timing* — the only thing this class
+decides — be tested without a database. That matters more than it sounds: a
+15-minute timer that silently never fires looks exactly like a folder nobody has
+touched, and nothing else in the suite would have noticed.
+
+**D-M6-17 — `BackupStore.list` reads the directory synchronously.**
+`Directory.list()` returns a stream whose events are never delivered under
+`flutter_test`'s fake clock, which made §11.6.6's restore dialog — the one place
+this is reached from the UI — impossible to test through the widgets at all.
+`listSync` costs nothing here: the directory holds at most twenty small files, it
+is application-private local storage rather than a folder a cloud client might be
+streaming over a network, and it is read twice per sync at most. The sync folder
+itself keeps the asynchronous listing, because that one genuinely can be remote.
+
+**D-M6-16 — A malformed `lastSyncAt` row no longer throws out of
+`SettingsRepository.read`.**
+Found by a test written for §11.5.5, not by inspection. `decodeInstant` calls
+`DateTime.parse`, which throws, and this table's standing rule is that "every read
+falls back to the factory default when the stored value is malformed" — a settings
+row the user cannot even see is not worth taking the app down over. It now uses
+`tryParse` and falls back to "never synced".
+
+---
+
 ---
 
 ## Verification status (§11.13.1)
@@ -802,6 +1022,7 @@ that has never run.
 
 | Milestone | Verified | How |
 |---|---|---|
+| M6 | **Not yet — the headless half only** | Everything §11.13.1 puts in the left-hand column is done and green: 89 tests in `zen_sync` (the snapshot codec, the file transport against real directories, the pre-merge backup store and the orchestrator), 207 in `zen_data` (25 new, for `DatasetRepository.replaceAll` under STORE-4 and for §11.8’s settings), and 209 in `zen_app`. **The convergence simulation of §11.12 item 3 passes over 60 seeds**, against two real Drift databases exchanging snapshots through a real shared directory, asserting the replicas are field-for-field identical and that every §3.7 invariant holds; a coverage assertion beside it requires all sixteen user operations to occur across the seeds, and it is what caught the archive sweep never firing (D-M6-13). `dart analyze --fatal-infos --fatal-warnings` clean across all four packages, `dart format` clean. **`LanSyncTransport` is deliberately absent** — it is M7 — and the orchestrator is already n-ary and multi-transport, with a two-transport test to prove it. **What is not established:** the Android SAF path. §11.13.1 is explicit that "scoped storage, `ACTION_OPEN_DOCUMENT_TREE`, persisted grants, and grant revocation behave only on a real device", and none of it has run on one. `SafSnapshotDirectory`, `AndroidSyncFolderPicker` and `AndroidSnapshotFileExchange` are **written but never executed**: every method is a platform channel call. The logic above them is tested against `IoSnapshotDirectory`, which is the most that can be said. Steps S-8 to S-15 of `MANUAL_VERIFICATION.md` are what would settle it, and until the owner confirms them this row does not read "Yes". Windows sync (S-1 to S-7) and the export/import/restore flows (S-16 to S-24) are likewise unconfirmed by hand. |
 | M5 | **Yes** | §5 is fully implemented and 87 tests are green under `flutter test` in `zen_app`. **AC-4** and **AC-5** pass on the Edit Task screen, **AC-10** passes through the Archived Tasks UI *and* through Search's Restore, and **AC-11** passes via the Edit Idea entry point as well as `"Make Task"`. §11.12 item 6's golden tests exist for all three TODO-3 circle states and all three disabled variants — **on Windows only** (D-M4-8); CI skips them. HOME-5's five shortcuts, NFR-7 at 400 px, ROW-5's three distances and §11.5.5's recovery screen each have a test. Confirmed by hand on **2026-09-24** alongside M4, over the whole of `MANUAL_VERIFICATION.md`. |
 | M4 | **Yes** | The headless half: 349 tests in `zen_domain` (36 new, for `updateTask`, `logicalDayOf` and `SearchQuery`), 182 in `zen_data`, 87 in `zen_app`. **AC-1, AC-2, AC-3, AC-7** pass again as widget tests against a real in-memory database, and **AC-8, AC-9, AC-11, AC-12** pass through the screens. `dart analyze --fatal-infos --fatal-warnings` clean across all four packages, `dart format` clean. **"The app runs on both platforms" is now established by hand,** on **2026-09-24**, against `MANUAL_VERIFICATION.md`: W-1 through W-12 on Windows 10 22H2 built with Visual Studio Build Tools 2022 17.14.41, and A-1 through A-9 plus Z-1 and Z-2 on an `android-36.1` `x86_64` emulator (`Medium-Phone-API-36.1`). All accepted by the owner. Getting there needed three toolchain changes, none of them code: the VS 2022 C++ workload with CMake tools and the Windows 10 SDK, Android `cmdline-tools` plus accepted licences, and NDK 28.2.13676358 installed by hand (D-M4-16). Windows builds are run from an elevated terminal in place of Developer Mode, which is the owner's standing choice. **NFR-2 is measured and met:** about **500 ms** cold from the home screen on the phone, against a target of "under 1.5 s on a mid-range Android device". D-M4-17 has the `--trace-startup` split. |
 | M3 | **Yes** | 182 tests green under `flutter test` in `zen_data`, plus 313 in `zen_domain` (16 new there, for EOD-2A, INV-8 and INV-9). Sixty-seven of the 182 are constraint tests written in raw SQL with the repositories bypassed: every `CHECK`, both partial unique indexes, all seven triggers, the foreign keys and the cascades are attacked and required to fail, and each assertion names the constraint that fired, so a test cannot pass because some other constraint objected first. AC-6, AC-8, AC-9 and AC-10 pass against a real in-memory database, with AC-8/9/10 reaching the partial index rather than an application check. The §11.5.3 harness is in place: `drift_schemas/drift_schema_v1.json` is committed and a test verifies the live schema against it. `dart analyze --fatal-infos --fatal-warnings` clean, `dart format` clean. §11.13.1 puts all of M3 in the left-hand column and that held — Drift ran headlessly throughout and nothing here needs real hardware. |
@@ -812,6 +1033,12 @@ that has never run.
 Nothing in this table may be treated as complete until its column reads "Yes".
 
 ### Open verification items
+
+- **The Android SAF code has never executed.** `SafSnapshotDirectory`, `AndroidSyncFolderPicker` and `AndroidSnapshotFileExchange` are written against `saf_util` 3.1.0 and `saf_stream` 4.0.1 and are entirely platform channel calls, so nothing in the headless suite reaches them. Two things in particular are guesses until a device says otherwise: that SAF keeps the `.json` extension on a document created with `application/json` (if it does not, no peer will ever read the file), and that the delete-then-rename of §11.6.3 does not leave a `… (1).json` duplicate behind. Both are checked by S-9 and S-10 in `MANUAL_VERIFICATION.md`, and both fail *silently* if they are wrong — which is why they are the first things to look at.
+
+- **The delete-then-rename window on Android is accepted, not measured.** §11.6.3 records that SAF offers no atomic replace, so there is a moment when this replica’s snapshot file does not exist. The argument that this is acceptable — absent is not torn, and a missing peer file costs one sync round — is sound, but it is an argument rather than an observation. If it ever proves to matter, the generation-numbered scheme §11.6.3 names is the upgrade, and it changes the filename convention on both platforms.
+
+- **Nothing has run against a real folder-sync client.** The convergence simulation exchanges snapshots through a local directory, which is what Syncthing or a cloud drive presents — but not how it behaves. Partial files mid-replication, conflict copies (`… sync-conflict-….json`), and a peer’s file arriving before its contents do are all real and none is exercised. A conflict copy is at least harmless by construction: it does not match `zen-snapshot-*.json` unless the client preserves the extension, and if it does, the body’s `replicaId` still decides. S-15 is the step that would put this to the test.
 
 - **`ci.yaml` has never run.** It is written against the same commands proven
   locally, but the repository has no GitHub remote yet, so the workflow, the

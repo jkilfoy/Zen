@@ -2,7 +2,12 @@ name: zen_sync
 description: >-
   Snapshot format, sync transports and the sync orchestrator for Zen
   (ZEN_SPEC.md §11.6). Pure Dart: `dart test` runs it without Flutter.
-  Third-party dependencies are added in M6/M7 and recorded in DECISIONS.md.
+
+  §11.1 bans IO in `zen_domain` only. This package is where IO belongs, so
+  `dart:io` is used directly for the Windows file transport and for the
+  pre-merge backups of §11.6.6. Android's SAF cannot be reached from pure Dart,
+  so `FileSnapshotTransport` is written against the `SnapshotDirectory` port and
+  `zen_app` supplies the SAF-backed implementation (§11.7).
 publish_to: none
 version: 0.1.0
 
@@ -10,6 +15,14 @@ environment:
   sdk: ^3.13.0
 
 dependencies:
+  collection: ^1.19.0
+  meta: ^1.16.0
+  # Path joining for the backup directory and the IO snapshot directory. Pure
+  # Dart string manipulation; the IO itself is dart:io's.
+  path: ^1.9.1
+  # Temp-file names in §11.6.3's write protocol. The same version zen_domain
+  # already resolves for entity ids.
+  uuid: ^4.6.0
   zen_domain:
     path: ../zen_domain
 

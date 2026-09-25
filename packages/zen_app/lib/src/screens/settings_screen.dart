@@ -13,6 +13,7 @@ import '../providers/app_providers.dart';
 import '../theme/decor_pack.dart';
 import '../theme/decor_registry.dart';
 import 'idea_form_screen.dart' show TimeframePicker;
+import 'sync_section.dart';
 
 /// §5.11. "Lists every setting in §3.6 with an appropriate control."
 ///
@@ -27,7 +28,7 @@ class SettingsScreen extends ConsumerWidget {
   ///
   /// Read from the document's own header when it changes; the app version comes
   /// from the package metadata.
-  static const String specVersion = '1.9';
+  static const String specVersion = '1.11';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -173,8 +174,8 @@ class SettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
-            // SET-4. The sync section, whose transports arrive in M6 and M7.
-            const _SyncSection(),
+            // SET-4, §11.8. The sync section. The LAN half of it is M7's.
+            const _Section(title: 'Sync', child: SyncSection()),
             const Divider(),
             // SET-3. "A read-only `"About"` row shows the app version and this
             // spec's version number."
@@ -184,47 +185,6 @@ class SettingsScreen extends ConsumerWidget {
       ),
     );
   }
-}
-
-/// SET-4. "A `"Sync"` section holds the sync settings and actions. It is
-/// specified in §11.8."
-///
-/// Every control §11.8 names — the two transport toggles, the folder picker,
-/// pairing, `"Sync now"`, the snapshot import and export — belongs to
-/// `zen_sync`, which M6 and M7 build. The section is present and says so rather
-/// than being omitted, because a missing section reads as a feature that was
-/// forgotten. Recorded in `DECISIONS.md`, D-M4-9.
-class _SyncSection extends StatelessWidget {
-  const _SyncSection();
-
-  @override
-  Widget build(BuildContext context) => _Section(
-    title: 'Sync',
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        const SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: Text('Sync through a shared folder'),
-          value: false,
-          onChanged: null,
-        ),
-        const SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: Text('Sync over the local network'),
-          value: false,
-          onChanged: null,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Sync is not built yet. Your data stays on this device.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
-    ),
-  );
 }
 
 /// SET-3. The About row.

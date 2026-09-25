@@ -7,12 +7,17 @@
 /// screen agrees with the fake.
 library;
 
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_app/src/app.dart';
 import 'package:zen_app/src/providers/app_providers.dart';
+import 'package:zen_app/src/providers/sync_providers.dart';
+import 'package:zen_app/src/sync/snapshot_file_exchange.dart';
+import 'package:zen_app/src/sync/sync_folder_picker.dart';
 import 'package:zen_data/zen_data.dart';
 import 'package:zen_domain/testing.dart';
 import 'package:zen_domain/zen_domain.dart';
@@ -30,12 +35,36 @@ final class ZenHarness {
   /// test, not passed here: `initialSettingsProvider` is only what the first
   /// frame reads, and `settingsProvider`'s stream — the stored value — wins as
   /// soon as it emits.
-  factory ZenHarness({DateTime? now}) {
+  factory ZenHarness({
+    DateTime? now,
+    FakeSyncFolderPicker? folderPicker,
+    FakeSnapshotFileExchange? fileExchange,
+  }) {
     final AppDatabase db = AppDatabase(NativeDatabase.memory());
     addTearDown(db.close);
     final FakeClock clock = FakeClock(now ?? base, zoneId: testZoneId);
+    final Directory backups = Directory.systemTemp.createTempSync('zen_test');
+    addTearDown(() => backups.deleteSync(recursive: true));
+    // §11.6.3. A real directory for the file transport, so a test that turns
+    // sync on exercises the transport rather than a stand-in.
+    final Directory syncFolder = Directory.systemTemp.createTempSync(
+      'zen_test_sync',
+    );
+    addTearDown(() => syncFolder.deleteSync(recursive: true));
+    final FakeSyncFolderPicker picker = folderPicker ?? FakeSyncFolderPicker();
+    final FakeSnapshotFileExchange exchange =
+        fileExchange ?? FakeSnapshotFileExchange();
     final ProviderContainer container = ProviderContainer(
       overrides: [
+        // §11.6.1, §11.6.6. `main.dart` supplies these from `package_info_plus`
+        // and `path_provider`; neither answers under `flutter test`.
+        appVersionProvider.overrideWithValue('1.0.0+test'),
+        backupDirectoryProvider.overrideWithValue(backups.path),
+        // §11.7. The platform glue, which a headless test cannot invoke: both
+        // open a native dialog. The screens are what these tests are about, and
+        // the screens only ever see this interface (§11.6.3, §11.8).
+        syncFolderPickerProvider.overrideWithValue(picker),
+        snapshotFileExchangeProvider.overrideWithValue(exchange),
         databaseProvider.overrideWithValue(db),
         localZoneIdProvider.overrideWithValue(testZoneId),
         initialSettingsProvider.overrideWithValue(Settings()),
@@ -48,14 +77,33 @@ final class ZenHarness {
       ],
     );
     addTearDown(container.dispose);
-    return ZenHarness._(db: db, container: container, clock: clock);
+    return ZenHarness._(
+      db: db,
+      container: container,
+      clock: clock,
+      folderPicker: picker,
+      fileExchange: exchange,
+      syncFolder: syncFolder,
+    );
   }
 
   ZenHarness._({
     required this.db,
     required this.container,
     required this.clock,
+    required this.folderPicker,
+    required this.fileExchange,
+    required this.syncFolder,
   });
+
+  /// §11.6.3. A real, empty directory a test can point the file transport at.
+  final Directory syncFolder;
+
+  /// §11.6.3. The stand-in for the native folder dialog.
+  final FakeSyncFolderPicker folderPicker;
+
+  /// §11.8. The stand-in for the native file dialogs.
+  final FakeSnapshotFileExchange fileExchange;
 
   /// The in-memory database every repository in [container] shares.
   final AppDatabase db;
@@ -206,4 +254,52 @@ Future<Task> seedTask(
     task = task.softDeleted(now);
   }
   return (await harness.tasks.create(task)).unwrap();
+}
+
+/// §11.6.3, §11.7. A [SyncFolderPicker] a test can drive.
+///
+/// The real ones open a native dialog — `file_selector` on Windows, SAF on
+/// Android — which a headless test cannot answer. §11.13.1 puts the Android
+/// half of that in the hardware column; this stands in for both so the screens
+/// above the interface can be tested.
+final class FakeSyncFolderPicker implements SyncFolderPicker {
+  /// What [pick] returns. Null means the user cancelled.
+  String? location = r'D:\Sync\Zen';
+
+  /// What [stillGranted] reports.
+  bool granted = true;
+
+  /// The locations [release] was called with.
+  final List<String> released = <String>[];
+
+  @override
+  Future<String?> pick() async => location;
+
+  @override
+  Future<bool> stillGranted(String location) async => granted;
+
+  @override
+  Future<void> release(String location) async => released.add(location);
+}
+
+/// §11.8. A [SnapshotFileExchange] a test can drive.
+final class FakeSnapshotFileExchange implements SnapshotFileExchange {
+  /// What [read] returns. Null means the user cancelled.
+  String? incoming;
+
+  /// What [write] was given, if anything.
+  String? written;
+
+  /// The name [write] was asked to suggest.
+  String? suggestedName;
+
+  @override
+  Future<String?> read() async => incoming;
+
+  @override
+  Future<String?> write(String suggestedName, String contents) async {
+    this.suggestedName = suggestedName;
+    written = contents;
+    return suggestedName;
+  }
 }

@@ -17,15 +17,21 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:zen_data/zen_data.dart';
 import 'package:zen_domain/zen_domain.dart';
+import 'package:zen_sync/zen_sync.dart';
 
 import 'src/app.dart';
 import 'src/providers/app_providers.dart';
 import 'src/providers/archive_scheduler.dart';
+import 'src/providers/sync_providers.dart';
+import 'src/providers/sync_scheduler.dart';
 import 'src/providers/system_clock.dart';
+import 'src/sync/database_recovery.dart';
+import 'src/sync/snapshot_file_exchange.dart';
 import 'src/screens/unreadable_database_screen.dart';
 
 /// STORE-1. "Each replica owns one local database."
@@ -54,7 +60,22 @@ Future<void> main() async {
   switch (outcome) {
     // §11.5.5. Nothing was destroyed; say so and offer the ways back.
     case DatabaseUnreadable():
-      runApp(UnreadableDatabaseApp(outcome));
+      runApp(
+        UnreadableDatabaseApp(
+          outcome,
+          recovery: DatabaseRecovery(
+            databasePath: path,
+            // Only when the unreadable file was moved aside is there room to
+            // create a fresh database in its place (D-M3-11).
+            canRecover: outcome.quarantinedPath != null,
+            backups: BackupStore(directoryPath: '${directory.path}/backups'),
+            exchange: Platform.isAndroid
+                ? AndroidSnapshotFileExchange()
+                : const DesktopSnapshotFileExchange(),
+            clock: clock,
+          ),
+        ),
+      );
 
     case DatabaseOpened(:final AppDatabase database):
       final SettingsRepository settingsRepository = DriftSettingsRepository(
@@ -74,6 +95,11 @@ Future<void> main() async {
           localZoneIdProvider.overrideWithValue(zoneId),
           initialSettingsProvider.overrideWithValue(settings),
           deviceNameProvider.overrideWithValue(await _deviceName()),
+          // §11.6.1. The envelope records which build wrote a snapshot.
+          appVersionProvider.overrideWithValue(await _appVersion()),
+          // §11.6.6. Application-private storage — the same directory the
+          // database is in, which `dart:io` reaches on both platforms.
+          backupDirectoryProvider.overrideWithValue(directory.path),
         ],
       );
 
@@ -89,9 +115,31 @@ Future<void> main() async {
       );
       await scheduler.start();
 
+      // §11.6.5's second and third triggers. Started after the archive sweep so
+      // that a snapshot published on launch describes a dataset EOD-2 has
+      // already brought up to date, rather than one holding Tasks that are
+      // about to archive a moment later.
+      final SyncScheduler syncScheduler = SyncScheduler(
+        sync: container.read(syncOrchestratorProvider).sync,
+        settings: container.read(settingsRepositoryProvider),
+      );
+      unawaited(syncScheduler.start());
+
       runApp(
         UncontrolledProviderScope(container: container, child: const ZenApp()),
       );
+  }
+}
+
+/// §11.6.1. This build's version, for the snapshot envelope.
+Future<String> _appVersion() async {
+  try {
+    final PackageInfo info = await PackageInfo.fromPlatform();
+    return '${info.version}+${info.buildNumber}';
+  } on Object {
+    // Diagnostic metadata only: nothing reads it back, and refusing to start
+    // because the package metadata is unavailable would be absurd.
+    return 'unknown';
   }
 }
 

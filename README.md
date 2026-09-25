@@ -156,6 +156,6 @@ still waiting on real hardware (§11.13.1).
 | M3 — `zen_data` | **done** — 313 domain + 182 data tests green; every constraint has a test that attempts the violation |
 | M4 — capture path | **done** — 87 widget tests green, and confirmed by hand on Windows and an Android emulator |
 | M5 — remaining screens | **done** — §5 fully implemented; goldens run on Windows only (D-M4-8) |
-| M6 — `zen_sync` core | not started |
+| M6 — `zen_sync` core | **code complete, awaiting hardware** — snapshot codec, orchestrator, pre-merge backup, `FileSnapshotTransport` and §11.8’s Sync settings; the convergence simulation is green over 60 seeds. **The Android SAF path needs a real device** (§11.13.1) — see `MANUAL_VERIFICATION.md` |
 | M7 — LAN transport | not started |
 | M8 — packaging | not started |
