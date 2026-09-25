@@ -186,6 +186,24 @@ it. Everything else needs only the two builds.
 | S-20 | After at least one real sync, Settings ▸ Sync ▸ `Restore from backup…` | A list of timestamps appears. Choosing one asks `Restore this backup?` and says it cannot be undone. | Whether the confirmation appeared **before** anything changed. |
 | S-21 | Confirm the restore | Your ideas and tasks become exactly what that backup held. | Whether they did. |
 
+### M6 — the sync triggers (§11.6.5), after the D-M6-20 fix
+
+S-1 to S-21 passed on 2026-09-24, and the owner reported that sync ran "seems
+like all the time" regardless of `syncIntervalMinutes`. Two defects, both fixed
+and both now covered by regression tests (D-M6-20). These steps are what
+confirms the fix on real hardware, since neither defect was visible to the suite
+before it was pointed at them.
+
+| # | Step | Expected | Report |
+|---|---|---|---|
+| S-25 | **Windows.** Settings ▸ Sync, interval `15 minutes`, `Sync when Zen opens` on. Note the "Last synced" time, then click away to another window and back, several times | "Last synced" **does not move**. A focus change is not a foreground. | Whether it moved at all. |
+| S-26 | **Windows.** Minimise Zen, then restore it | "Last synced" **does** move: that is a real foreground. | Whether it did. |
+| S-27 | **Windows.** Leave Zen open and untouched, and check "Last synced" after 15 and 30 minutes | It moves once per interval, not more. | The two times, so the spacing can be checked. |
+| S-28 | **Windows.** Set the interval to `5 minutes` and wait | The next pass comes about 5 minutes later, not 15 — SET-2 applies at once. | Whether the change took effect without a restart. |
+| S-29 | **Windows.** Set the interval to `Never`, then wait 20 minutes without touching the window | "Last synced" **never moves**. §11.8: "`0` disables." | Any movement at all. |
+| S-30 | **Android.** Switch to another app and back | "Last synced" moves once per return, not more. | Whether one return produced exactly one sync. |
+| S-31 | **Android.** With the interval at `Never` and `Sync when Zen opens` **off**, use the app for a while | Nothing syncs unless you press `Sync now`. | Any unrequested sync. |
+
 ### M6 — the recovery screen (§11.5.5)
 
 D-M4-9 left these buttons disabled; M6 wired them. Reaching this screen means

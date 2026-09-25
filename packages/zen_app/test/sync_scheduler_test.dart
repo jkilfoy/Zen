@@ -62,11 +62,15 @@ void main() {
     testWidgets('returning to the foreground syncs again', (
       WidgetTester tester,
     ) async {
+      // Through `paused`, because that is what leaving the foreground actually
+      // looks like. A bare `resumed` is a focus change, and the group below is
+      // about why that must not sync.
       await schedulerFor(
         Settings(syncOnForeground: true, syncIntervalMinutes: 0),
       ).start();
       await tester.pump();
 
+      scheduler.didChangeAppLifecycleState(AppLifecycleState.paused);
       scheduler.didChangeAppLifecycleState(AppLifecycleState.resumed);
       await tester.pump();
       await tester.pump();
@@ -86,6 +90,7 @@ void main() {
       scheduler.didChangeAppLifecycleState(AppLifecycleState.inactive);
       await tester.pump();
 
+      // Leaving the foreground is not itself a trigger; only coming back is.
       expect(passes, hasLength(1));
     });
 
@@ -102,6 +107,7 @@ void main() {
         Settings(syncOnForeground: false, syncIntervalMinutes: 0),
       );
 
+      scheduler.didChangeAppLifecycleState(AppLifecycleState.paused);
       scheduler.didChangeAppLifecycleState(AppLifecycleState.resumed);
       await tester.pump();
       await tester.pump();
@@ -195,6 +201,95 @@ void main() {
       await tester.pump(const Duration(hours: 6));
 
       expect(passes, isEmpty);
+    });
+  });
+
+  group('a focus change is not a foreground', () {
+    testWidgets('inactive then resumed does not sync', (
+      WidgetTester tester,
+    ) async {
+      // Reported from a real Windows build on 2026-09-24: "the sync appeared to
+      // be occurring without pressing Sync now very frequently (seems like all
+      // the time)". On desktop, losing and regaining window focus produces
+      // `inactive` then `resumed` — so every click back into the window was a
+      // full pass. §11.6.5 means a genuine foreground, not a focus flicker.
+      await schedulerFor(
+        Settings(syncOnForeground: true, syncIntervalMinutes: 0),
+      ).start();
+      await tester.pump();
+      expect(passes, hasLength(1), reason: 'the launch is a foreground');
+
+      for (int flicker = 0; flicker < 5; flicker++) {
+        scheduler.didChangeAppLifecycleState(AppLifecycleState.inactive);
+        scheduler.didChangeAppLifecycleState(AppLifecycleState.resumed);
+        await tester.pump();
+        await tester.pump();
+      }
+
+      expect(passes, hasLength(1));
+    });
+
+    testWidgets('being hidden and then resumed does sync', (
+      WidgetTester tester,
+    ) async {
+      // Minimising on Windows, and backgrounding on Android, both pass through
+      // `hidden`. That is a real foreground when it comes back.
+      await schedulerFor(
+        Settings(syncOnForeground: true, syncIntervalMinutes: 0),
+      ).start();
+      await tester.pump();
+
+      scheduler.didChangeAppLifecycleState(AppLifecycleState.inactive);
+      scheduler.didChangeAppLifecycleState(AppLifecycleState.hidden);
+      scheduler.didChangeAppLifecycleState(AppLifecycleState.inactive);
+      scheduler.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump();
+
+      expect(passes, hasLength(2));
+    });
+
+    testWidgets('being paused and then resumed does sync', (
+      WidgetTester tester,
+    ) async {
+      await schedulerFor(
+        Settings(syncOnForeground: true, syncIntervalMinutes: 0),
+      ).start();
+      await tester.pump();
+
+      scheduler.didChangeAppLifecycleState(AppLifecycleState.paused);
+      scheduler.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump();
+
+      expect(passes, hasLength(2));
+    });
+  });
+
+  group('the interval timer is not reset by unrelated settings writes', () {
+    testWidgets('a lastSyncAt write does not push the next pass back', (
+      WidgetTester tester,
+    ) async {
+      // §11.6.5 step 8 writes `lastSyncAt` after *every* pass, and that emits on
+      // the settings stream. Re-arming on every emission meant the 15-minute
+      // timer was reset by each sync, so the interval never governed anything.
+      await schedulerFor(
+        Settings(syncOnForeground: false, syncIntervalMinutes: 15),
+      ).start();
+
+      await tester.pump(const Duration(minutes: 10));
+      await settings.write(
+        Settings(
+          syncOnForeground: false,
+          syncIntervalMinutes: 15,
+          lastSyncAt: DateTime.utc(2026, 9, 24, 12),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(minutes: 5));
+
+      expect(passes, hasLength(1));
+      scheduler.dispose();
     });
   });
 

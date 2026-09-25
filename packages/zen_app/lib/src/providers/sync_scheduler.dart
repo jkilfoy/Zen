@@ -45,6 +45,16 @@ final class SyncScheduler with WidgetsBindingObserver {
   StreamSubscription<Settings>? _watch;
   bool _disposed = false;
 
+  /// The interval the current [_timer] was armed with, so that a settings write
+  /// which did not change it leaves the timer alone.
+  int _armedInterval = 0;
+
+  /// Whether the app has genuinely left the foreground since the last resume.
+  ///
+  /// False at construction: the launch itself counts as a foreground, and
+  /// [start] handles that one directly.
+  bool _leftForeground = false;
+
   /// Starts watching the lifecycle and the settings, and syncs if
   /// `syncOnForeground` is set.
   ///
@@ -55,10 +65,15 @@ final class SyncScheduler with WidgetsBindingObserver {
     final Settings current = await _settings.read();
     _arm(current.syncIntervalMinutes);
 
-    // Re-armed whenever the interval changes, so that a new value in Settings
-    // takes effect at once (SET-2) rather than after the old timer fires.
+    // Re-armed when the interval changes, so that a new value in Settings takes
+    // effect at once (SET-2) rather than after the old timer fires — but *only*
+    // when it changes. §11.6.5 step 8 writes `lastSyncAt` after every pass, and
+    // that emits here too; re-arming on every emission reset the timer on every
+    // sync, so the interval never governed anything.
     _watch = _settings.watch().listen((Settings next) {
-      _arm(next.syncIntervalMinutes);
+      if (next.syncIntervalMinutes != _armedInterval) {
+        _arm(next.syncIntervalMinutes);
+      }
     });
 
     if (current.syncOnForeground) {
@@ -67,18 +82,43 @@ final class SyncScheduler with WidgetsBindingObserver {
   }
 
   /// §11.6.5. "On app foreground when `syncOnForeground`."
+  ///
+  /// **A focus change is not a foreground.** On Windows, clicking away from the
+  /// window and back produces `inactive` then `resumed`, so treating every
+  /// `resumed` as a foreground made a full sync pass run on every click back
+  /// into the app — which is what it looked like, reported from a real build as
+  /// syncing "seems like all the time" regardless of `syncIntervalMinutes`.
+  ///
+  /// A genuine departure from the foreground passes through `hidden`, `paused`
+  /// or `detached` on both platforms: minimising on Windows, backgrounding on
+  /// Android. `inactive` alone is a focus flicker, a menu, or a dialog, and the
+  /// app never stopped being on screen.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed || _disposed) {
+    if (_disposed) {
       return;
     }
-    unawaited(
-      _settings.read().then((Settings current) {
-        if (current.syncOnForeground) {
-          _syncQuietly();
+    switch (state) {
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        _leftForeground = true;
+      case AppLifecycleState.inactive:
+        // Deliberately nothing. The app is still on screen.
+        break;
+      case AppLifecycleState.resumed:
+        if (!_leftForeground) {
+          return;
         }
-      }),
-    );
+        _leftForeground = false;
+        unawaited(
+          _settings.read().then((Settings current) {
+            if (current.syncOnForeground) {
+              _syncQuietly();
+            }
+          }),
+        );
+    }
   }
 
   /// Stops the timer and the lifecycle observer.
@@ -93,6 +133,7 @@ final class SyncScheduler with WidgetsBindingObserver {
   /// §11.8. "`0` disables."
   void _arm(int intervalMinutes) {
     _timer?.cancel();
+    _armedInterval = intervalMinutes;
     if (_disposed || intervalMinutes <= 0) {
       _timer = null;
       return;
